@@ -1,0 +1,36 @@
+{
+  "projectName": "my-app",
+  "baseBranch": "main",
+  "workspaceDir": ".codecouncil",
+  "agents": {
+    "codex": {
+      "enabled": true,
+      "command": "codex",
+      "planArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json"],
+      "reviewArgs": ["exec", "--json"],
+      "maxRuntimeSeconds": 900
+    },
+    "claude": {
+      "enabled": true,
+      "command": "claude",
+      "planArgs": ["-p", "--output-format", "stream-json"],
+      "implementArgs": ["-p", "--output-format", "stream-json"],
+      "reviewArgs": ["-p", "--output-format", "stream-json"],
+      "maxRuntimeSeconds": 900
+    }
+  },
+  "testCommands": ["npm test"],
+  "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil"],
+  "review": {
+    "maxDiffBytes": 120000
+  },
+  "safety": {
+    "requireApprovalBeforeApply": true,
+    "blockSecretFiles": true,
+    "createCommitOnImplementation": false,
+    "defaultPlanModeReadOnly": true,
+    "allowImplementationByDefault": false,
+    "secretPatterns": []
+  }
+}

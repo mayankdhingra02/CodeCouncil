@@ -1,0 +1,36 @@
+{
+  "projectName": "my-app",
+  "baseBranch": "main",
+  "workspaceDir": ".codecouncil",
+  "agents": {
+    "mock-codex": {
+      "enabled": true,
+      "command": "mock-codex",
+      "planArgs": [],
+      "implementArgs": [],
+      "reviewArgs": [],
+      "maxRuntimeSeconds": 900
+    },
+    "mock-claude": {
+      "enabled": true,
+      "command": "mock-claude",
+      "planArgs": [],
+      "implementArgs": [],
+      "reviewArgs": [],
+      "maxRuntimeSeconds": 900
+    }
+  },
+  "testCommands": ["npm test"],
+  "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil"],
+  "review": {
+    "maxDiffBytes": 120000
+  },
+  "safety": {
+    "requireApprovalBeforeApply": true,
+    "blockSecretFiles": true,
+    "createCommitOnImplementation": false,
+    "defaultPlanModeReadOnly": true,
+    "allowImplementationByDefault": false,
+    "secretPatterns": []
+  }
+}

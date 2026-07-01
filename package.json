@@ -1,0 +1,63 @@
+{
+  "name": "codecouncil",
+  "version": "0.1.0",
+  "description": "A local CLI for coordinating multiple AI coding agents through isolated git worktrees.",
+  "type": "module",
+  "bin": {
+    "codecouncil": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ARCHITECTURE.md",
+    "SECURITY.md",
+    "examples"
+  ],
+  "scripts": {
+    "build": "pnpm build:cli && pnpm build:extension",
+    "build:cli": "tsc -p tsconfig.json",
+    "build:extension": "tsc -p packages/vscode-extension/tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p packages/vscode-extension/tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "codex",
+    "claude",
+    "developer-tools",
+    "git-worktrees"
+  ],
+  "author": "Mayank Dhingra",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mayankdhingra02/CodeCouncil.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mayankdhingra02/CodeCouncil/issues"
+  },
+  "homepage": "https://github.com/mayankdhingra02/CodeCouncil#readme",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "execa": "^9.5.2",
+    "ignore": "^5.3.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  }
+}

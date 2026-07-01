@@ -1,0 +1,13 @@
+# Files CodeCouncil should avoid passing into agent prompts or reports.
+node_modules/
+dist/
+coverage/
+.git/
+.codecouncil/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.sqlite
+*.db

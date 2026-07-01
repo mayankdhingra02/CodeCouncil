@@ -1,0 +1,78 @@
+{
+  "name": "codecouncil-vscode",
+  "displayName": "CodeCouncil",
+  "description": "Thin VS Code wrapper around the CodeCouncil CLI.",
+  "version": "0.1.0",
+  "publisher": "codecouncil",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:codecouncil.init",
+    "onCommand:codecouncil.doctor",
+    "onCommand:codecouncil.planTask",
+    "onCommand:codecouncil.showSessions",
+    "onCommand:codecouncil.openLatestReport",
+    "onCommand:codecouncil.openLatestPlanComparison",
+    "onCommand:codecouncil.resumeSession"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codecouncil.init",
+        "title": "CodeCouncil: Initialize Project"
+      },
+      {
+        "command": "codecouncil.doctor",
+        "title": "CodeCouncil: Doctor"
+      },
+      {
+        "command": "codecouncil.planTask",
+        "title": "CodeCouncil: Plan Task"
+      },
+      {
+        "command": "codecouncil.showSessions",
+        "title": "CodeCouncil: Show Sessions"
+      },
+      {
+        "command": "codecouncil.openLatestReport",
+        "title": "CodeCouncil: Open Latest Report"
+      },
+      {
+        "command": "codecouncil.openLatestPlanComparison",
+        "title": "CodeCouncil: Open Latest Plan Comparison"
+      },
+      {
+        "command": "codecouncil.resumeSession",
+        "title": "CodeCouncil: Resume Session"
+      }
+    ],
+    "configuration": {
+      "title": "CodeCouncil",
+      "properties": {
+        "codecouncil.cliPath": {
+          "type": "string",
+          "default": "codecouncil",
+          "description": "Path to the CodeCouncil CLI. Use a .js file path to run it with the current Node executable."
+        },
+        "codecouncil.workspaceDir": {
+          "type": "string",
+          "default": ".codecouncil",
+          "description": "CodeCouncil workspace directory used for locating sessions and reports."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "vscode:prepublish": "pnpm run build"
+  }
+}

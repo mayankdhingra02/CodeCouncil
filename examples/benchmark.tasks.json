@@ -1,0 +1,12 @@
+[
+  {
+    "id": "task-001",
+    "title": "Add password complexity validation",
+    "description": "Add password complexity validation to the signup flow and tests for missing uppercase, lowercase, and number requirements.",
+    "repositoryPath": "demo-repo",
+    "baseBranch": "main",
+    "testCommands": ["npm test"],
+    "expectedFiles": ["src/signup.mjs", "test/signup.test.mjs"],
+    "evaluationNotes": "Check that existing email validation still works and password requirements are tested."
+  }
+]

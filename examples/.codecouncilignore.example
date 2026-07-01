@@ -1,0 +1,19 @@
+# Dependency and build output
+node_modules/
+dist/
+coverage/
+
+# Repository internals
+.git/
+.codecouncil/
+
+# Local secrets and machine state
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# Local databases
+*.sqlite
+*.db
