@@ -91,6 +91,8 @@ interface ReviewCliSummary {
   verdict: ReviewOutput["verdict"];
 }
 
+const REVIEW_SCORE_BASELINE_POINTS = 15;
+
 export function registerReviewCommand(program: Command): void {
   program
     .command("review")
@@ -239,7 +241,7 @@ export function registerReviewCommand(program: Command): void {
       for (const summary of cliSummaries) {
         const score = scores.find((candidate) => candidate.agentId === summary.targetAgentId);
         const reviewComponent = score?.components.find((component) => component.name === "Reviews");
-        summary.reviewScoreImpact = (reviewComponent?.points ?? 15) - 15;
+        summary.reviewScoreImpact = (reviewComponent?.points ?? REVIEW_SCORE_BASELINE_POINTS) - REVIEW_SCORE_BASELINE_POINTS;
       }
 
       await appendSessionEvent(session, {
@@ -329,6 +331,15 @@ async function runReviewPair(options: {
       task: options.session.task,
       ...(options.targetContext.testSummary ? { testSummary: options.targetContext.testSummary } : {})
     });
+    review = reviewOutputSchema.parse({
+      ...review,
+      metadata: {
+        ...review.metadata,
+        diffMode: options.targetContext.diffMode,
+        diffSizeBytes: options.targetContext.diffSizeBytes,
+        safetyWarningCount: options.targetContext.safetyWarnings.length
+      }
+    });
   } catch (error) {
     review = reviewOutputSchema.parse({
       reviewerAgentId: options.pair.reviewerAgentId,
@@ -382,12 +393,11 @@ async function buildTargetReviewContext(options: {
   const diffStat = await stat(implementation.diffPath);
   const diffSizeBytes = diffStat.size;
   const fullDiff = await readFile(implementation.diffPath, "utf8");
-  const hasSensitiveOrIgnoredChanges =
+  const hasBlockedOrIgnoredChanges =
     implementation.safety.blockedFiles.length > 0 ||
-    implementation.safety.ignoredFiles.length > 0 ||
-    implementation.safety.suspiciousFiles.length > 0;
+    implementation.safety.ignoredFiles.length > 0;
   const diffMode =
-    diffSizeBytes > options.config.review.maxDiffBytes || hasSensitiveOrIgnoredChanges
+    diffSizeBytes > options.config.review.maxDiffBytes || hasBlockedOrIgnoredChanges
       ? "summary"
       : "full";
   const tests = await loadTestMetadata(options.session, options.target.id);
@@ -395,6 +405,7 @@ async function buildTargetReviewContext(options: {
   const safetyWarnings = [
     ...implementation.safety.warnings,
     ...implementation.safety.blockedFiles.map((filePath) => `Blocked changed file: ${filePath}`),
+    ...implementation.safety.ignoredFiles.map((filePath) => `Ignored changed file: ${filePath}`),
     ...implementation.safety.suspiciousFiles.map((filePath) => `Suspicious changed file: ${filePath}`)
   ];
 
@@ -405,8 +416,8 @@ async function buildTargetReviewContext(options: {
       diffMode === "full"
         ? fullDiff
         : [
-            hasSensitiveOrIgnoredChanges
-              ? "Patch omitted because sensitive, suspicious, or ignored files were touched."
+            hasBlockedOrIgnoredChanges
+              ? "Patch omitted because blocked or ignored files were touched."
               : `Patch omitted because it is ${diffSizeBytes} bytes, above configured review.maxDiffBytes=${options.config.review.maxDiffBytes}.`,
             "Perform a high-level review using the changed file list, tests, and safety metadata.",
             "",

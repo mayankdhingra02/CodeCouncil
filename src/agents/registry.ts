@@ -11,7 +11,7 @@ type AgentFactory = (
   runner?: AgentCommandRunner
 ) => CodeCouncilAgent;
 
-const BUILT_IN_AGENT_FACTORIES = new Map<AgentId, AgentFactory>([
+const BUILT_IN_AGENT_FACTORIES = new Map<string, AgentFactory>([
   ["mock-codex", createMockCodexAgent],
   ["mock-claude", createMockClaudeAgent],
   ["codex", createCodexAgent],
@@ -29,11 +29,12 @@ export class AgentRegistry {
         continue;
       }
 
-      const factory = BUILT_IN_AGENT_FACTORIES.get(id);
+      const adapterId = agentConfig.adapter ?? id;
+      const factory = BUILT_IN_AGENT_FACTORIES.get(adapterId);
 
       if (!factory) {
         throw new CodeCouncilError(
-          `Agent "${id}" is enabled but no adapter is registered for it. Available adapters: ${[
+          `Agent "${id}" is enabled with adapter "${adapterId}", but no adapter is registered for it. Available adapters: ${[
             ...BUILT_IN_AGENT_FACTORIES.keys()
           ].join(", ")}.`,
           {

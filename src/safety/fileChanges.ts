@@ -63,7 +63,11 @@ const SUSPICIOUS_FILE_RULES: readonly FileRule[] = [
   { action: "warn", label: "package registry credential", pattern: /(?:^|\/)\.npmrc$/iu },
   { action: "warn", label: "package registry credential", pattern: /(?:^|\/)\.pypirc$/iu },
   { action: "warn", label: "ssh file", pattern: /(?:^|\/)(?:known_hosts|ssh_config)$/iu },
-  { action: "warn", label: "possible secret", pattern: /(?:password|private|secret|token|credential|session)/iu },
+  {
+    action: "warn",
+    label: "possible secret",
+    pattern: /(?:^|\/|[-_.])(?:passwords?|secrets?|tokens?|credentials?|private[-_.]?(?:keys?)?)(?:[-_./]|$)/iu
+  },
   { action: "warn", label: "auth-related data file", pattern: /(?:^|\/)auth(?:\.(?:json|yaml|yml|env|txt)|\/)/iu }
 ];
 

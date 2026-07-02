@@ -13,7 +13,10 @@ import {
 } from "../src/agents/index.js";
 import { createCli } from "../src/cli.js";
 import { createDefaultConfig } from "../src/config/defaults.js";
+import { GitManager } from "../src/git/index.js";
+import { saveImplementationArtifacts } from "../src/implementation/index.js";
 import { aggregateReviews, createReviewPairs } from "../src/review/index.js";
+import { classifyChangedFiles } from "../src/safety/index.js";
 import { calculateImplementationScore } from "../src/scoring/index.js";
 import {
   approveAgentPlan,
@@ -186,6 +189,71 @@ describe("review CLI", () => {
     await expect(
       readFile(path.join(session.paths.sessionDir, "scores", "implementation-scores.md"), "utf8")
     ).resolves.toContain("Reviews");
+  });
+
+  it("keeps full diff mode for suspicious but unblocked changed paths", async () => {
+    const repo = await createTempGitRepo();
+    const session = await createApprovedSession(repo, "Review suspicious filenames without dropping diff context");
+    const git = new GitManager(repo);
+    const worktree = await git.ensureWorktree({
+      agentId: "mock-claude",
+      session
+    });
+
+    await mkdir(path.join(worktree.worktreePath, "docs"), { recursive: true });
+    await writeFile(path.join(worktree.worktreePath, "docs", "secret-checklist.md"), "# Checklist\n", "utf8");
+
+    const changedFiles = await git.getChangedFiles(worktree.worktreePath, "main");
+    const diffPath = path.join(session.paths.diffsDir, "mock-claude.patch");
+    await git.createPatchFile({
+      baseBranch: "main",
+      outputPath: diffPath,
+      worktreePath: worktree.worktreePath
+    });
+    const safety = classifyChangedFiles(changedFiles);
+
+    expect(safety.blockedFiles).toEqual([]);
+    expect(safety.suspiciousFiles).toEqual(["docs/secret-checklist.md"]);
+
+    await saveImplementationArtifacts({
+      agentId: "mock-claude",
+      changedFiles,
+      diffPath,
+      output: {
+        agentId: "mock-claude",
+        completedAt: "2026-07-01T12:50:00.000Z",
+        createdFiles: ["docs/secret-checklist.md"],
+        displayName: "Mock Claude",
+        filesChanged: ["docs/secret-checklist.md"],
+        metadata: {},
+        status: "success",
+        summary: "Created a harmless suspicious-name fixture."
+      },
+      safety,
+      session,
+      status: "success",
+      worktree
+    });
+
+    await runCli([
+      "--cwd",
+      repo,
+      "--json",
+      "review",
+      "--session",
+      session.id,
+      "--reviewer",
+      "mock-codex",
+      "--target",
+      "mock-claude"
+    ]);
+
+    const reviewJson = JSON.parse(
+      await readFile(path.join(session.paths.reviewsDir, "mock-codex-reviews-mock-claude.json"), "utf8")
+    ) as { metadata?: { diffMode?: unknown; safetyWarningCount?: unknown } };
+
+    expect(reviewJson.metadata?.diffMode).toBe("full");
+    expect(reviewJson.metadata?.safetyWarningCount).toBeGreaterThan(0);
   });
 });
 

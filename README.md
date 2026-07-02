@@ -238,6 +238,7 @@ See [docs/vscode-extension.md](docs/vscode-extension.md).
 
 - This is an early project scaffold, not a security sandbox.
 - Real-agent behavior depends on installed/authenticated local CLIs.
+- The CLI is developed and tested first on macOS/Linux; Windows support is not yet a release target.
 - Benchmark results are only meaningful after representative tasks and human labels.
 - Cross-agent review can miss bugs and should not replace human review.
 - The VS Code extension is intentionally minimal and delegates to the CLI.

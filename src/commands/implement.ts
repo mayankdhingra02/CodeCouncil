@@ -169,25 +169,34 @@ export function registerImplementCommand(program: Command): void {
             }
           }
 
-          if (summary.status === "blocked") {
-            throw new CodeCouncilError(
-              `Implementation by ${summary.agentId} changed blocked files: ${summary.safety.blockedFiles.join(", ")}`,
-              {
-                code: "BLOCKED_FILE_CHANGE",
-                exitCode: 2
-              }
-            );
-          }
         }
+
+        const blockedSummaries = summaries.filter((summary) => summary.status === "blocked");
 
         await appendSessionEvent(session, {
           type: "implementation.completed",
-          status: "success",
-          message: "Completed implementation phase.",
+          status: blockedSummaries.length > 0 ? "failed" : "success",
+          message:
+            blockedSummaries.length > 0
+              ? "Completed implementation phase with blocked file changes."
+              : "Completed implementation phase.",
           metadata: {
-            agents: summaries.map((summary) => summary.agentId)
+            agents: summaries.map((summary) => summary.agentId),
+            blockedAgents: blockedSummaries.map((summary) => summary.agentId)
           }
         });
+
+        if (blockedSummaries.length > 0) {
+          throw new CodeCouncilError(
+            `Implementation changed blocked files: ${blockedSummaries
+              .map((summary) => `${summary.agentId}: ${summary.safety.blockedFiles.join(", ")}`)
+              .join("; ")}`,
+            {
+              code: "BLOCKED_FILE_CHANGE",
+              exitCode: 2
+            }
+          );
+        }
 
         writeResult(
           runtime.commandContext,

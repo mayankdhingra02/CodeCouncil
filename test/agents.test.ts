@@ -49,6 +49,44 @@ describe("AgentRegistry", () => {
     expect(() => AgentRegistry.fromConfig(config)).toThrow("no adapter is registered");
   });
 
+  it("decouples configured agent ids from adapter ids", () => {
+    const config = createDefaultConfig({
+      projectName: "agent-test"
+    });
+    config.agents = {
+      "codex-fast": {
+        adapter: "codex",
+        enabled: true,
+        command: "codex",
+        model: "gpt-5.4-mini",
+        models: {},
+        planArgs: ["exec", "--json"],
+        implementArgs: ["exec", "--json"],
+        reviewArgs: ["exec", "--json"],
+        maxRuntimeSeconds: 120
+      },
+      "codex-reviewer": {
+        adapter: "codex",
+        enabled: true,
+        command: "codex",
+        model: "gpt-5.5",
+        models: {},
+        planArgs: ["exec", "--json"],
+        implementArgs: ["exec", "--json"],
+        reviewArgs: ["exec", "--json"],
+        maxRuntimeSeconds: 120
+      }
+    };
+
+    const agents = AgentRegistry.fromConfig(config, new FakeRunner(true)).listEnabled();
+
+    expect(agents.map((agent) => agent.id)).toEqual(["codex-fast", "codex-reviewer"]);
+    expect(agents.map((agent) => agent.displayName)).toEqual([
+      "OpenAI Codex CLI",
+      "OpenAI Codex CLI"
+    ]);
+  });
+
   it("loads real Codex and Claude adapters when configured", () => {
     const config = createDefaultConfig({
       projectName: "agent-test"
@@ -230,11 +268,13 @@ describe("real CLI adapters", () => {
     const saved = await savePlanArtifacts(session, plan);
 
     expect(runner.runs[0]).toMatchObject({
-      args: expect.arrayContaining(["exec", "--json", "--model", "gpt-5.4-mini"]),
+      args: expect.arrayContaining(["exec", "--json", "--model", "gpt-5.4-mini", "-"]),
       command: "codex",
       cwd: rootDir,
+      input: expect.stringContaining("Add real adapter test"),
       timeoutMs: 120000
     });
+    expect(runner.runs[0]?.args.join(" ")).not.toContain("Add real adapter test");
     expect(plan).toMatchObject({
       agentId: "codex",
       summary: "Use the real adapter test plan.",

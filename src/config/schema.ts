@@ -20,6 +20,7 @@ export const agentIdSchema = z
 
 export const agentConfigSchema = z
   .object({
+    adapter: agentIdSchema.optional(),
     enabled: z.boolean().default(true),
     command: z.string().min(1, "Agent command is required."),
     model: z.string().min(1).optional(),

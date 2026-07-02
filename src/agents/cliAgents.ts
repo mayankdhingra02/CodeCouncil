@@ -74,10 +74,15 @@ export class CliAgent implements CodeCouncilAgent {
 
   public async generatePlan(input: PlanInput): Promise<PlanOutput> {
     const prompt = createPlanningPrompt(input);
+    const args = buildPromptArgs({
+      command: this.config.command,
+      args: injectModelArg(this.config.planArgs, getAgentStageModel(this.config, "plan"))
+    });
     const result = await this.runner.run({
-      args: [...injectModelArg(this.config.planArgs, getAgentStageModel(this.config, "plan")), prompt],
+      args,
       command: this.config.command,
       cwd: input.repoRoot,
+      input: prompt,
       timeoutMs: this.config.maxRuntimeSeconds * 1000
     });
 
@@ -100,10 +105,15 @@ export class CliAgent implements CodeCouncilAgent {
     }
 
     const prompt = createImplementationPrompt(input);
+    const args = buildPromptArgs({
+      command: this.config.command,
+      args: injectModelArg(this.config.implementArgs, getAgentStageModel(this.config, "implement"))
+    });
     const result = await this.runner.run({
-      args: [...injectModelArg(this.config.implementArgs, getAgentStageModel(this.config, "implement")), prompt],
+      args,
       command: this.config.command,
       cwd: input.worktreePath,
+      input: prompt,
       timeoutMs: this.config.maxRuntimeSeconds * 1000
     });
 
@@ -116,10 +126,15 @@ export class CliAgent implements CodeCouncilAgent {
 
   public async reviewDiff(input: ReviewInput): Promise<ReviewOutput> {
     const prompt = createReviewPrompt(input);
+    const args = buildPromptArgs({
+      command: this.config.command,
+      args: injectModelArg(this.config.reviewArgs, getAgentStageModel(this.config, "review"))
+    });
     const result = await this.runner.run({
-      args: [...injectModelArg(this.config.reviewArgs, getAgentStageModel(this.config, "review")), prompt],
+      args,
       command: this.config.command,
       cwd: input.repoRoot,
+      input: prompt,
       timeoutMs: this.config.maxRuntimeSeconds * 1000
     });
 
@@ -144,6 +159,22 @@ export function createCodexAgent(
     installHint: "Install and authenticate OpenAI Codex CLI separately, then rerun CodeCouncil.",
     ...(runner ? { runner } : {})
   });
+}
+
+function buildPromptArgs(input: { args: readonly string[]; command: string }): string[] {
+  const args = [...input.args];
+
+  if (shouldUseCodexStdinSentinel(input.command, args)) {
+    return [...args, "-"];
+  }
+
+  return args;
+}
+
+function shouldUseCodexStdinSentinel(command: string, args: readonly string[]): boolean {
+  const executable = path.basename(command).toLowerCase();
+
+  return executable === "codex" && args[0] === "exec" && !args.includes("-");
 }
 
 export function createClaudeCodeAgent(

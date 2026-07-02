@@ -4,6 +4,7 @@
   "workspaceDir": ".codecouncil",
   "agents": {
     "mock-codex": {
+      "adapter": "mock-codex",
       "enabled": true,
       "command": "mock-codex",
       "models": {},
@@ -13,6 +14,7 @@
       "maxRuntimeSeconds": 900
     },
     "mock-claude": {
+      "adapter": "mock-claude",
       "enabled": true,
       "command": "mock-claude",
       "models": {},

@@ -23,6 +23,7 @@ Fallback legacy name:
   "workspaceDir": ".codecouncil",
   "agents": {
     "mock-codex": {
+      "adapter": "mock-codex",
       "enabled": true,
       "command": "mock-codex",
       "models": {},
@@ -32,6 +33,7 @@ Fallback legacy name:
       "maxRuntimeSeconds": 900
     },
     "mock-claude": {
+      "adapter": "mock-claude",
       "enabled": true,
       "command": "mock-claude",
       "models": {},
@@ -65,6 +67,7 @@ CodeCouncil calls configured commands through child processes. It does not read 
 {
   "agents": {
     "codex": {
+      "adapter": "codex",
       "enabled": true,
       "command": "codex",
       "models": {
@@ -78,6 +81,7 @@ CodeCouncil calls configured commands through child processes. It does not read 
       "maxRuntimeSeconds": 900
     },
     "claude": {
+      "adapter": "claude",
       "enabled": true,
       "command": "claude",
       "models": {
@@ -94,7 +98,34 @@ CodeCouncil calls configured commands through child processes. It does not read 
 }
 ```
 
-CodeCouncil appends its generated prompt as the final argument after the configured args.
+`adapter` selects the built-in integration to use. If omitted, CodeCouncil defaults `adapter` to the agent id, so existing `codex` and `claude` configs keep working.
+
+The configured agent id can differ from the adapter id. That lets you define multiple instances of the same CLI with different models or roles:
+
+```json
+{
+  "agents": {
+    "codex-fast": {
+      "adapter": "codex",
+      "command": "codex",
+      "model": "gpt-5.4-mini",
+      "planArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+      "reviewArgs": ["exec", "--json"]
+    },
+    "codex-reviewer": {
+      "adapter": "codex",
+      "command": "codex",
+      "model": "gpt-5.5",
+      "planArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+      "reviewArgs": ["exec", "--json"]
+    }
+  }
+}
+```
+
+CodeCouncil sends generated prompts over stdin to avoid large prompts appearing in process arguments. The Codex adapter adds a `-` stdin sentinel for `codex exec`; Claude keeps the configured `-p` style flags.
 
 ## Model Selection
 

@@ -109,7 +109,7 @@ describe("implementation phase", () => {
     });
   });
 
-  it("blocks implementation results that touch secret files", async () => {
+  it("records blocked secret changes but continues remaining selected agents before failing", async () => {
     const repo = await createTempGitRepo();
     const session = await createApprovedSession(repo, "Avoid secret changes");
     const git = new GitManager(repo);
@@ -121,7 +121,7 @@ describe("implementation phase", () => {
     await writeFile(path.join(worktree.worktreePath, ".env"), "SECRET=value\n", "utf8");
 
     await expect(
-      runCli(["--cwd", repo, "implement", "--session", session.id, "--agents", "mock-codex"])
+      runCli(["--cwd", repo, "implement", "--session", session.id, "--agents", "mock-codex,mock-claude"])
     ).rejects.toMatchObject({
       code: "BLOCKED_FILE_CHANGE"
     });
@@ -129,9 +129,14 @@ describe("implementation phase", () => {
     await expect(
       readFile(path.join(session.paths.sessionDir, "runs", "mock-codex", "implementation.json"), "utf8")
     ).resolves.toContain('"status": "blocked"');
+    await expect(
+      readFile(path.join(session.paths.sessionDir, "runs", "mock-claude", "implementation.json"), "utf8")
+    ).resolves.toContain('"status": "success"');
 
     const events = await readEvents(session.paths.eventsFile);
     expect(events.map((event) => event.type)).toContain("agent.implementation.blocked");
+    expect(events.map((event) => event.type)).toContain("agent.implementation.completed");
+    expect(events.map((event) => event.type)).toContain("implementation.completed");
   });
 
   it("classifies secret and ignored file modifications as blocked", () => {

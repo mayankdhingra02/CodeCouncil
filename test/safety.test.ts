@@ -21,7 +21,8 @@ describe("sensitive file detection", () => {
       ".ssh/id_ed25519",
       "credentials.json",
       ".aws/credentials",
-      "src/auth.ts"
+      "src/auth.ts",
+      "src/session/state.ts"
     ]);
 
     expect(result.blockedFiles).toEqual([
@@ -31,7 +32,7 @@ describe("sensitive file detection", () => {
       "credentials.json",
       ".aws/credentials"
     ]);
-    expect(result.safeFiles).toEqual(["src/auth.ts"]);
+    expect(result.safeFiles).toEqual(["src/auth.ts", "src/session/state.ts"]);
   });
 
   it("honors configurable secret path patterns", () => {
