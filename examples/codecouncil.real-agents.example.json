@@ -6,17 +6,17 @@
     "codex": {
       "enabled": true,
       "command": "codex",
-      "planArgs": ["exec", "--json"],
+      "planArgs": ["exec", "--json", "--sandbox", "read-only"],
       "implementArgs": ["exec", "--json"],
-      "reviewArgs": ["exec", "--json"],
+      "reviewArgs": ["exec", "--json", "--sandbox", "read-only"],
       "maxRuntimeSeconds": 900
     },
     "claude": {
       "enabled": true,
       "command": "claude",
-      "planArgs": ["-p", "--output-format", "stream-json"],
-      "implementArgs": ["-p", "--output-format", "stream-json"],
-      "reviewArgs": ["-p", "--output-format", "stream-json"],
+      "planArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
+      "implementArgs": ["-p", "--verbose", "--output-format", "stream-json"],
+      "reviewArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
       "maxRuntimeSeconds": 900
     }
   },
