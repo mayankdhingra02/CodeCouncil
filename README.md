@@ -40,6 +40,34 @@ CodeCouncil does not claim the answer yet. Benchmark mode creates the data pipel
 
 CodeCouncil does **not** automatically merge, push, publish, or apply agent changes.
 
+## Dogfood Evidence
+
+CodeCouncil has been dogfooded on its own demo repository with the real Codex CLI
+and Claude Code CLI. The run used rotated reconciliation, explicit approval,
+isolated worktree implementation, tests, cross-agent review, safety reporting,
+and a final recommendation.
+
+The run also caught a real orchestration bug: repeated runs of the same task were
+colliding on branch names. CodeCouncil now names branches with the timestamped
+session id, for example `codecouncil/<session-id>/<agent-id>`, so repeated
+same-task sessions stay isolated.
+
+Curated artifacts:
+
+- [Dogfood writeup](docs/dogfooding.md)
+- [Real-agent run showcase](examples/showcase/real-agent-run/README.md)
+- [Rotate reconciliation showcase](examples/showcase/rotate-reconciliation-run/README.md)
+
+Result summary:
+
+| Agent | Implementation | Tests | Review | Score |
+| --- | --- | --- | --- | ---: |
+| Claude | success | passed | approved | 100 |
+| Codex | success | passed | approved with non-blocking missing-test notes | 94 |
+
+This is one small demo, not benchmark proof. Its value is showing the workflow,
+artifacts, safety gates, and how dogfooding improved the tool.
+
 ## Architecture
 
 ```mermaid
@@ -228,6 +256,7 @@ See [docs/vscode-extension.md](docs/vscode-extension.md).
 - [VS Code Extension](docs/vscode-extension.md)
 - [Benchmarking](docs/benchmarking.md)
 - [Architecture](docs/architecture.md)
+- [Dogfooding](docs/dogfooding.md)
 - [Demo Script](docs/demo-script.md)
 - [Portfolio Copy](docs/portfolio-copy.md)
 

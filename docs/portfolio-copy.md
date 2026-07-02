@@ -32,6 +32,25 @@ The research question I want to explore next: when does two-agent collaboration 
 
 No inflated claims yet. The benchmark harness is there so the project can measure that question with real tasks and human labels.
 
+## Dogfood LinkedIn Post Draft
+
+I dogfooded CodeCouncil on its own demo repository with real Codex CLI and Claude Code CLI.
+
+The workflow:
+
+- Codex and Claude produced independent plans.
+- CodeCouncil compared the plans with deterministic local rules.
+- Rotate reconciliation asked both agents to produce merged candidate plans.
+- I approved the recommended reconciled plan.
+- Both agents implemented the same plan in separate git worktrees.
+- CodeCouncil ran tests, cross-review, safety checks, and a final report.
+
+Both implementations passed tests and were approved in cross-review. Claude's patch received the top recommendation, while Claude's review of Codex still surfaced two non-blocking missing-test follow-ups.
+
+The most useful part: dogfooding caught a real orchestration bug. Re-running the same task exposed branch-name collisions because branches used only the task slug. I fixed it by including the timestamped session id in each agent branch.
+
+That is exactly the kind of project I wanted CodeCouncil to be: not a magic merge button, but an auditable workflow for comparing AI-generated plans and patches while keeping the human in control.
+
 ## GitHub Repo Description
 
 Local TypeScript CLI for coordinating AI coding agents with isolated git worktrees, cross-review, tests, safety checks, reports, and benchmark mode.
