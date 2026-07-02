@@ -36,8 +36,47 @@ describe("plan comparison and approval", () => {
     expect(comparison.files.uniqueByAgent["mock-codex"]).toEqual(["test/auth.test.ts"]);
     expect(comparison.testingStrategy.shared).toEqual(["pnpm test"]);
     expect(comparison.securityConsiderations.length).toBeGreaterThan(0);
-    expect(comparison.suggestedImplementationAgent).toBe("mock-codex");
-    expect(comparison.recommendedApproach).toContain("mock-codex");
+    expect(comparison.decisionPolicy).toMatchObject({
+      engine: "local-rules",
+      humanApprovalRequired: true,
+      usesAiJudge: false
+    });
+    expect(comparison.agentAssessments).toHaveLength(2);
+    expect(comparison.recommendationReasons.join("\n")).toContain("local rules score");
+  });
+
+  it("normalizes described file paths and does not let confidence alone win", () => {
+    const comparison = comparePlans([
+      makePlan("lower-confidence-complete", {
+        confidence: 0.58,
+        proposedFilesToChange: [
+          "src/benchmark/output.ts - add HTML renderer",
+          "test/benchmark.test.ts - cover escaping"
+        ],
+        risks: ["HTML escaping can miss user-supplied strings."],
+        testsToRun: ["pnpm test", "pnpm typecheck", "pnpm lint"]
+      }),
+      makePlan("high-confidence-thin", {
+        assumptions: [],
+        confidence: 0.99,
+        proposedFilesToChange: ["src/benchmark/output.ts"],
+        risks: [],
+        stepByStepPlan: [],
+        testsToRun: []
+      })
+    ]);
+
+    expect(comparison.files.shared).toEqual(["src/benchmark/output.ts"]);
+    expect(comparison.files.uniqueByAgent["lower-confidence-complete"]).toEqual([
+      "test/benchmark.test.ts"
+    ]);
+    expect(comparison.suggestedImplementationAgent).toBe("lower-confidence-complete");
+    expect(comparison.warnings).toContain(
+      "At least one plan is highly self-confident but weak by local completeness/specificity checks."
+    );
+    expect(comparison.recommendationReasons.join("\n")).toContain(
+      "only 5% self-reported confidence"
+    );
   });
 
   it("creates approval files from an agent plan and manual approval", async () => {
