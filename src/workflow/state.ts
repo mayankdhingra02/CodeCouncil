@@ -110,6 +110,7 @@ export async function collectWorkflowArtifacts(
     "suggestedApproval",
     path.join(session.paths.plansDir, "suggested-approved-plan.md")
   );
+  await addIfExists(artifacts, "reconciledPlan", path.join(session.paths.plansDir, "reconciled.json"));
   await addIfExists(artifacts, "approvedPlan", path.join(session.paths.sessionDir, "approved-plan.json"));
 
   if (implementationFiles.length > 0) {
@@ -153,7 +154,9 @@ export function suggestNextCommand(
     case "created":
       return `codecouncil plan "${session.task}"`;
     case "planned":
-      return `codecouncil approve --session ${session.id} --agent ${suggestedAgent}`;
+      return artifacts["reconciledPlan"]?.length
+        ? `codecouncil approve --session ${session.id} --reconciled`
+        : `codecouncil reconcile --session ${session.id} --reconciler ${suggestedAgent}`;
     case "approved":
       return `codecouncil implement --session ${session.id} --agents ${agentsCsv}`;
     case "implemented":
@@ -239,7 +242,14 @@ function inferAgentsFromArtifacts(artifacts: Record<string, readonly string[]>):
   const agentIds = plans.flatMap((filePath) => {
     const baseName = path.basename(filePath);
 
-    if (["comparison.json", "comparison.md", "suggested-approved-plan.json", "suggested-approved-plan.md"].includes(baseName)) {
+    if ([
+      "comparison.json",
+      "comparison.md",
+      "reconciled.json",
+      "reconciled.md",
+      "suggested-approved-plan.json",
+      "suggested-approved-plan.md"
+    ].includes(baseName)) {
       return [];
     }
 

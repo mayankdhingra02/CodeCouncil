@@ -45,19 +45,21 @@ Open:
 
 Talking point: Plans are structured and persisted for review.
 
-## 5. Approve A Plan
+## 5. Reconcile And Approve
 
 ```bash
-codecouncil approve --session <session-id> --agent mock-codex
+codecouncil reconcile --session <session-id> --reconciler mock-codex
+codecouncil approve --session <session-id> --reconciled
 ```
 
 Open:
 
 ```text
+.codecouncil/runs/<session-id>/plans/reconciled.md
 .codecouncil/runs/<session-id>/approved-plan.md
 ```
 
-Talking point: implementation is gated by approval.
+Talking point: reconciliation proposes a merged plan, but implementation is still gated by explicit human approval.
 
 ## 6. Implement In Worktrees
 

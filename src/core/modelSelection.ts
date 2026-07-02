@@ -1,7 +1,7 @@
 import type { AgentConfig, AgentId, CodeCouncilConfig } from "../config/schema.js";
 import { CodeCouncilError } from "./errors.js";
 
-export type AgentStage = "plan" | "implement" | "review";
+export type AgentStage = "plan" | "implement" | "reconcile" | "review";
 
 export interface ModelCatalogEntry {
   id: string;
@@ -233,6 +233,10 @@ export function formatModelSelectionArgs(selection: ModelSelection): string[] {
 }
 
 export function getAgentStageModel(config: AgentConfig, stage: AgentStage): string | undefined {
+  if (stage === "reconcile") {
+    return config.models.reconcile ?? config.models.plan ?? config.model;
+  }
+
   return config.models[stage] ?? config.model;
 }
 

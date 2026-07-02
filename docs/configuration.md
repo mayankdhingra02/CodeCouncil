@@ -29,6 +29,7 @@ Fallback legacy name:
       "models": {},
       "planArgs": [],
       "implementArgs": [],
+      "reconcileArgs": [],
       "reviewArgs": [],
       "maxRuntimeSeconds": 900
     },
@@ -39,6 +40,7 @@ Fallback legacy name:
       "models": {},
       "planArgs": [],
       "implementArgs": [],
+      "reconcileArgs": [],
       "reviewArgs": [],
       "maxRuntimeSeconds": 900
     }
@@ -73,10 +75,12 @@ CodeCouncil calls configured commands through child processes. It does not read 
       "models": {
         "plan": "gpt-5.4-mini",
         "implement": "gpt-5.5",
+        "reconcile": "gpt-5.5",
         "review": "gpt-5.5"
       },
       "planArgs": ["exec", "--json"],
       "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+      "reconcileArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json"],
       "maxRuntimeSeconds": 900
     },
@@ -87,10 +91,12 @@ CodeCouncil calls configured commands through child processes. It does not read 
       "models": {
         "plan": "sonnet",
         "implement": "opus",
+        "reconcile": "opus",
         "review": "opus"
       },
       "planArgs": ["-p", "--output-format", "stream-json"],
       "implementArgs": ["-p", "--output-format", "stream-json", "--permission-mode", "acceptEdits"],
+      "reconcileArgs": ["-p", "--output-format", "stream-json"],
       "reviewArgs": ["-p", "--output-format", "stream-json"],
       "maxRuntimeSeconds": 900
     }
@@ -111,6 +117,7 @@ The configured agent id can differ from the adapter id. That lets you define mul
       "model": "gpt-5.4-mini",
       "planArgs": ["exec", "--json"],
       "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+      "reconcileArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json"]
     },
     "codex-reviewer": {
@@ -119,6 +126,7 @@ The configured agent id can differ from the adapter id. That lets you define mul
       "model": "gpt-5.5",
       "planArgs": ["exec", "--json"],
       "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+      "reconcileArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json"]
     }
   }
@@ -126,6 +134,8 @@ The configured agent id can differ from the adapter id. That lets you define mul
 ```
 
 CodeCouncil sends generated prompts over stdin to avoid large prompts appearing in process arguments. The Codex adapter adds a `-` stdin sentinel for `codex exec`; Claude keeps the configured `-p` style flags.
+
+If `reconcileArgs` is empty, real adapters fall back to `planArgs` so reconciliation stays read-only by default.
 
 ## Model Selection
 
@@ -138,7 +148,8 @@ Each agent can define a default `model` or stage-specific `models`.
       "command": "codex",
       "model": "gpt-5.4-mini",
       "models": {
-        "implement": "gpt-5.5"
+        "implement": "gpt-5.5",
+        "reconcile": "gpt-5.5"
       }
     }
   }
@@ -150,6 +161,7 @@ Stage-specific values win over `model`. CLI flags win over config:
 ```bash
 codecouncil models list
 codecouncil plan "task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+codecouncil reconcile --session <id> --reconciler codex --model codex=gpt-5.5
 codecouncil implement --session <id> --agent claude --model claude=opus
 ```
 

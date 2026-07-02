@@ -5,6 +5,7 @@ import type { AgentConfig, AgentId } from "../config/schema.js";
 import {
   implementationOutputSchema,
   planOutputSchema,
+  reconciliationOutputSchema,
   reviewOutputSchema,
   type AgentAvailability,
   type AgentCapability,
@@ -13,6 +14,8 @@ import {
   type ImplementationOutput,
   type PlanInput,
   type PlanOutput,
+  type ReconciliationInput,
+  type ReconciliationOutput,
   type ReviewInput,
   type ReviewOutput
 } from "./types.js";
@@ -27,7 +30,7 @@ interface MockAgentOptions {
 }
 
 export class MockAgent implements CodeCouncilAgent {
-  public readonly capabilities: readonly AgentCapability[] = ["plan", "implement", "review"];
+  public readonly capabilities: readonly AgentCapability[] = ["plan", "implement", "reconcile", "review"];
   public readonly config: AgentConfig;
   public readonly displayName: string;
   public readonly id: AgentId;
@@ -131,6 +134,64 @@ export class MockAgent implements CodeCouncilAgent {
       confidence: hasDiff ? 0.82 : 0.55
     });
   }
+
+  public async reconcilePlans(input: ReconciliationInput): Promise<ReconciliationOutput> {
+    const firstPlan = input.plans[0];
+    const secondPlan = input.plans[1];
+    const files = unique(input.plans.flatMap(({ plan }) => plan.proposedFilesToChange));
+    const steps = unique(input.plans.flatMap(({ plan }) => plan.stepByStepPlan));
+    const risks = unique(input.plans.flatMap(({ plan }) => plan.risks));
+    const tests = unique(input.plans.flatMap(({ plan }) => plan.testsToRun));
+    const comparison = isRecord(input.comparison) ? input.comparison : {};
+    const disagreements = Array.isArray(comparison["majorDisagreements"])
+      ? comparison["majorDisagreements"].filter((item): item is string => typeof item === "string")
+      : [];
+
+    return reconciliationOutputSchema.parse({
+      reconcilerAgentId: this.id,
+      displayName: this.displayName,
+      generatedAt: new Date().toISOString(),
+      mergedPlan: {
+        summary: `Synthesize ${input.plans.length} plans for "${input.task}" into a narrow human-approved implementation path.`,
+        assumptions: unique(input.plans.flatMap(({ plan }) => plan.assumptions)),
+        files,
+        steps: steps.length > 0 ? steps : ["Use the deterministic comparison to choose the smallest reviewable path."],
+        risks: risks.length > 0 ? risks : ["Mock reconciliation cannot verify real repository semantics."],
+        tests: tests.length > 0 ? tests : input.config.testCommands,
+        estimatedComplexity: firstPlan?.plan.estimatedComplexity ?? secondPlan?.plan.estimatedComplexity ?? "medium"
+      },
+      resolutions:
+        disagreements.length > 0
+          ? disagreements.map((disagreement) => ({
+              disagreement,
+              chosenAgentId: "synthesis",
+              rationale: "Use shared low-risk pieces and defer unresolved differences to human review.",
+              evidence: files.slice(0, 2)
+            }))
+          : [
+              {
+                disagreement: "No major disagreements were identified by deterministic comparison.",
+                chosenAgentId: firstPlan?.alias ?? "synthesis",
+                rationale: "Prefer the first complete plan while retaining useful tests and risks from the other plan.",
+                evidence: files.slice(0, 2)
+              }
+            ],
+      rejectedIdeas: [],
+      openQuestionsForHuman: files.length === 0 ? ["Which concrete files should be inspected before approval?"] : [],
+      confidence: 0.76,
+      metadata: {
+        mock: true
+      }
+    });
+  }
+}
+
+function unique(items: readonly string[]): string[] {
+  return [...new Set(items.filter((item) => item.trim().length > 0))];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function createMockCodexAgent(id: AgentId, config: AgentConfig): CodeCouncilAgent {

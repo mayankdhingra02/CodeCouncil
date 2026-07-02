@@ -13,13 +13,14 @@ Each session stores the task, plans, worktrees, diffs, reviews, tests, scores, s
 1. Initialize config.
 2. Plan with one or more agents.
 3. Compare plans.
-4. Approve one plan or write a manual approved plan.
-5. Implement in isolated worktrees.
-6. Run tests.
-7. Cross-review diffs.
-8. Generate safety summary.
-9. Generate final report.
-10. Preview manual apply commands.
+4. Optionally reconcile competing plans into one candidate proposal.
+5. Approve one plan, approve the reconciled plan, or write a manual approved plan.
+6. Implement in isolated worktrees.
+7. Run tests.
+8. Cross-review diffs.
+9. Generate safety summary.
+10. Generate final report.
+11. Preview manual apply commands.
 
 ## Commands
 
@@ -28,6 +29,8 @@ codecouncil init
 codecouncil doctor
 codecouncil models list
 codecouncil plan "task" --agents codex,claude
+codecouncil reconcile --session <id> --reconciler codex
+codecouncil approve --session <id> --reconciled
 codecouncil approve --session <id> --agent codex
 codecouncil implement --session <id> --agents codex,claude
 codecouncil test --session <id> --agents codex,claude

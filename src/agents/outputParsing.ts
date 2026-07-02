@@ -1,9 +1,11 @@
 import {
   implementationOutputSchema,
   planOutputSchema,
+  reconciliationOutputSchema,
   reviewOutputSchema,
   type ImplementationOutput,
   type PlanOutput,
+  type ReconciliationOutput,
   type ReviewOutput
 } from "./types.js";
 import type { AgentCommandResult } from "./commandRunner.js";
@@ -149,6 +151,57 @@ export function buildReviewOutputFromCommand(input: {
   });
 }
 
+export function buildReconciliationOutputFromCommand(input: {
+  agentId: AgentId;
+  displayName: string;
+  result: AgentCommandResult;
+}): ReconciliationOutput {
+  const parsedOutput = parseAgentStdout(input.result.stdout);
+  const candidate = findReconciliationCandidate(parsedOutput) ?? findObjectCandidate(parsedOutput);
+  const mergedPlan = isRecord(candidate?.["mergedPlan"]) ? candidate["mergedPlan"] : candidate;
+
+  return reconciliationOutputSchema.parse({
+    reconcilerAgentId: input.agentId,
+    displayName: input.displayName,
+    generatedAt: input.result.completedAt,
+    mergedPlan: {
+      summary:
+        getString(mergedPlan, "summary") ??
+        firstMeaningfulLine(input.result.stdout) ??
+        "Agent returned reconciled planning output.",
+      assumptions: getStringArray(mergedPlan, "assumptions"),
+      files: firstNonEmptyArray([
+        getStringArray(mergedPlan, "files"),
+        getStringArray(mergedPlan, "proposedFilesToChange")
+      ]),
+      steps: firstNonEmptyArray([
+        getStringArray(mergedPlan, "steps"),
+        getStringArray(mergedPlan, "stepByStepPlan")
+      ]),
+      risks: getStringArray(mergedPlan, "risks"),
+      tests: firstNonEmptyArray([
+        getStringArray(mergedPlan, "tests"),
+        getStringArray(mergedPlan, "testsToRun")
+      ]),
+      estimatedComplexity: normalizeComplexity(getString(mergedPlan, "estimatedComplexity"))
+    },
+    resolutions: parseResolutionObjects(candidate),
+    rejectedIdeas: parseRejectedIdeaObjects(candidate),
+    openQuestionsForHuman: getStringArray(candidate, "openQuestionsForHuman"),
+    confidence: normalizeConfidence(candidate?.["confidence"]),
+    command: toCommandMetadata(input.result),
+    error: input.result.error,
+    metadata: {
+      parsed: parsedOutput !== undefined
+    },
+    parsedOutput,
+    rawOutput: {
+      stdout: input.result.stdout,
+      stderr: input.result.stderr
+    }
+  });
+}
+
 function toCommandMetadata(result: AgentCommandResult) {
   return {
     args: result.args,
@@ -168,6 +221,10 @@ function findPlanCandidate(value: unknown): Record<string, unknown> | undefined 
 
 function findObjectCandidate(value: unknown): Record<string, unknown> | undefined {
   return selectBestCandidate(value, scoreGenericCandidate, 2);
+}
+
+function findReconciliationCandidate(value: unknown): Record<string, unknown> | undefined {
+  return selectBestCandidate(value, scoreReconciliationCandidate, 3);
 }
 
 function selectBestCandidate(
@@ -324,6 +381,26 @@ function scoreGenericCandidate(candidate: Record<string, unknown>): number {
   return score;
 }
 
+function scoreReconciliationCandidate(candidate: Record<string, unknown>): number {
+  let score = 0;
+
+  if (isRecord(candidate["mergedPlan"])) {
+    score += 4;
+  }
+
+  for (const key of ["resolutions", "rejectedIdeas", "openQuestionsForHuman"]) {
+    if (Array.isArray(candidate[key])) {
+      score += 2;
+    }
+  }
+
+  if (typeof candidate["confidence"] === "number") {
+    score += 1;
+  }
+
+  return score;
+}
+
 function tryParseJson(value: string): unknown | undefined {
   try {
     return JSON.parse(value) as unknown;
@@ -349,6 +426,37 @@ function getStringArray(value: Record<string, unknown> | undefined, key: string)
   }
 
   return raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function getObjectArray(value: Record<string, unknown> | undefined, key: string): Record<string, unknown>[] {
+  const raw = value?.[key];
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter(isRecord);
+}
+
+function parseResolutionObjects(candidate: Record<string, unknown> | undefined) {
+  return getObjectArray(candidate, "resolutions").map((item) => ({
+    disagreement: getString(item, "disagreement") ?? "Unspecified disagreement.",
+    chosenAgentId: getString(item, "chosenAgentId") ?? getString(item, "chosenAgent") ?? "synthesis",
+    rationale: getString(item, "rationale") ?? "No rationale provided.",
+    evidence: getStringArray(item, "evidence")
+  }));
+}
+
+function parseRejectedIdeaObjects(candidate: Record<string, unknown> | undefined) {
+  return getObjectArray(candidate, "rejectedIdeas").map((item) => ({
+    agentId: getString(item, "agentId") ?? "unknown",
+    item: getString(item, "item") ?? "Unspecified idea.",
+    why: getString(item, "why") ?? "No rationale provided."
+  }));
+}
+
+function firstNonEmptyArray(values: readonly string[][]): string[] {
+  return values.find((value) => value.length > 0) ?? [];
 }
 
 function firstMeaningfulLine(value: string): string | undefined {

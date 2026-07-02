@@ -2,6 +2,7 @@ export {
   approveAgentPlan,
   approveManualPlan,
   approvePlanFromMarkdown,
+  approveReconciledPlan,
   approvedPlanSchema,
   getApprovedPlanJsonPath,
   getApprovedPlanMarkdownPath,

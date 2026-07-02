@@ -8,6 +8,7 @@ import { registerImplementCommand } from "./implement.js";
 import { registerInitCommand } from "./init.js";
 import { registerModelsCommand } from "./models.js";
 import { registerPlanCommand } from "./plan.js";
+import { registerReconcileCommand } from "./reconcile.js";
 import { registerReportCommand } from "./report.js";
 import { registerReviewCommand } from "./review.js";
 import { registerSafetyCommand } from "./safety.js";
@@ -24,6 +25,7 @@ export function registerCommands(program: Command): void {
   registerBenchmarkCommand(program);
   registerModelsCommand(program);
   registerPlanCommand(program);
+  registerReconcileCommand(program);
   registerSolveCommand(program);
   registerImplementCommand(program);
   registerReviewCommand(program);

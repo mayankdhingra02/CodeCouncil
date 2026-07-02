@@ -7,7 +7,8 @@ import { AgentRegistry, savePlanArtifacts } from "../src/agents/index.js";
 import type {
   AgentCommandResult,
   AgentCommandRunner,
-  AgentCommandRunOptions
+  AgentCommandRunOptions,
+  PlanOutput
 } from "../src/agents/index.js";
 import { createCli } from "../src/cli.js";
 import { createDefaultConfig } from "../src/config/defaults.js";
@@ -40,6 +41,7 @@ describe("AgentRegistry", () => {
         models: {},
         planArgs: [],
         implementArgs: [],
+        reconcileArgs: [],
         reviewArgs: [],
         maxRuntimeSeconds: 900
       }
@@ -62,6 +64,7 @@ describe("AgentRegistry", () => {
         models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
         maxRuntimeSeconds: 120
       },
@@ -73,6 +76,7 @@ describe("AgentRegistry", () => {
         models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
         maxRuntimeSeconds: 120
       }
@@ -99,6 +103,7 @@ describe("AgentRegistry", () => {
         models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
         maxRuntimeSeconds: 120
       },
@@ -108,6 +113,7 @@ describe("AgentRegistry", () => {
         models: {},
         planArgs: ["-p", "--output-format", "stream-json"],
         implementArgs: ["-p", "--output-format", "stream-json"],
+        reconcileArgs: ["-p", "--output-format", "stream-json"],
         reviewArgs: ["-p", "--output-format", "stream-json"],
         maxRuntimeSeconds: 120
       }
@@ -211,6 +217,7 @@ describe("real CLI adapters", () => {
         models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
         maxRuntimeSeconds: 120
       }
@@ -242,6 +249,7 @@ describe("real CLI adapters", () => {
         },
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
         maxRuntimeSeconds: 120
       }
@@ -292,6 +300,79 @@ describe("real CLI adapters", () => {
     await expect(readFile(saved.rawOutputPath ?? "", "utf8")).resolves.toContain(
       "Use the real adapter test plan."
     );
+  });
+
+  it("runs reconciliation commands with configured args and stdin prompts", async () => {
+    const rootDir = await makeTempDir();
+    const config = createDefaultConfig({
+      projectName: "agent-test"
+    });
+    config.agents = {
+      codex: {
+        enabled: true,
+        command: "codex",
+        models: {
+          reconcile: "gpt-5.5"
+        },
+        planArgs: ["exec", "--json"],
+        implementArgs: ["exec", "--json"],
+        reconcileArgs: ["exec", "--json", "--sandbox", "read-only"],
+        reviewArgs: ["exec", "--json"],
+        maxRuntimeSeconds: 120
+      }
+    };
+    const session = await createTaskSession({
+      config,
+      rootDir,
+      task: "Merge competing plans",
+      now: new Date("2026-07-01T12:34:56.000Z")
+    });
+    const runner = new FakeRunner(true);
+    const [agent] = AgentRegistry.fromConfig(config, runner).listEnabled();
+
+    if (!agent) {
+      throw new Error("Expected Codex agent.");
+    }
+
+    const reconciliation = await agent.reconcilePlans({
+      comparison: {
+        majorDisagreements: ["Different file boundaries."]
+      },
+      config,
+      plans: [
+        {
+          alias: "agent-a",
+          plan: makePlanOutput("agent-a")
+        },
+        {
+          alias: "agent-b",
+          plan: makePlanOutput("agent-b")
+        }
+      ],
+      repoRoot: rootDir,
+      session,
+      task: session.task
+    });
+
+    expect(runner.runs[0]).toMatchObject({
+      args: expect.arrayContaining(["exec", "--json", "--sandbox", "read-only", "--model", "gpt-5.5", "-"]),
+      command: "codex",
+      cwd: rootDir,
+      input: expect.stringContaining("plan reconciler"),
+      timeoutMs: 120000
+    });
+    expect(runner.runs[0]?.args.join(" ")).not.toContain("Merge competing plans");
+    expect(reconciliation).toMatchObject({
+      reconcilerAgentId: "codex",
+      mergedPlan: {
+        summary: "Use the reconciled adapter test plan."
+      },
+      resolutions: [
+        expect.objectContaining({
+          chosenAgentId: "synthesis"
+        })
+      ]
+    });
   });
 });
 
@@ -385,6 +466,23 @@ async function makeTempDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "codecouncil-agents-"));
 }
 
+function makePlanOutput(agentId: string): PlanOutput {
+  return {
+    agentId,
+    displayName: agentId,
+    generatedAt: "2026-07-01T12:34:56.000Z",
+    summary: `${agentId} summary`,
+    assumptions: [`${agentId} assumption`],
+    proposedFilesToChange: ["src/example.ts"],
+    stepByStepPlan: [`${agentId} step`],
+    risks: [`${agentId} risk`],
+    testsToRun: ["pnpm test"],
+    estimatedComplexity: "medium",
+    confidence: 0.75,
+    metadata: {}
+  };
+}
+
 class FakeRunner implements AgentCommandRunner {
   public readonly runs: AgentCommandRunOptions[] = [];
 
@@ -396,6 +494,39 @@ class FakeRunner implements AgentCommandRunner {
 
   public async run(options: AgentCommandRunOptions): Promise<AgentCommandResult> {
     this.runs.push(options);
+    const stdout = options.input?.includes("plan reconciler")
+      ? JSON.stringify({
+          mergedPlan: {
+            summary: "Use the reconciled adapter test plan.",
+            assumptions: ["The fake runner simulates reconciliation output."],
+            files: ["src/agents/cliAgents.ts"],
+            steps: ["Run the configured non-interactive reconciliation command."],
+            risks: ["Real CLI output shape may vary."],
+            tests: ["pnpm test"],
+            estimatedComplexity: "medium"
+          },
+          resolutions: [
+            {
+              disagreement: "Different file boundaries.",
+              chosenAgentId: "synthesis",
+              rationale: "Combine both plans after checking the local file boundary.",
+              evidence: ["src/agents/cliAgents.ts"]
+            }
+          ],
+          rejectedIdeas: [],
+          openQuestionsForHuman: [],
+          confidence: 0.83
+        })
+      : JSON.stringify({
+          summary: "Use the real adapter test plan.",
+          assumptions: ["The fake runner simulates CLI output."],
+          proposedFilesToChange: ["src/agents/cliAgents.ts"],
+          stepByStepPlan: ["Run the configured non-interactive command."],
+          risks: ["Real CLI output shape may vary."],
+          testsToRun: ["pnpm test"],
+          estimatedComplexity: "medium",
+          confidence: 0.81
+        });
 
     return {
       args: [...options.args],
@@ -405,16 +536,7 @@ class FakeRunner implements AgentCommandRunner {
       durationMs: 42,
       exitCode: 0,
       stderr: "",
-      stdout: JSON.stringify({
-        summary: "Use the real adapter test plan.",
-        assumptions: ["The fake runner simulates CLI output."],
-        proposedFilesToChange: ["src/agents/cliAgents.ts"],
-        stepByStepPlan: ["Run the configured non-interactive command."],
-        risks: ["Real CLI output shape may vary."],
-        testsToRun: ["pnpm test"],
-        estimatedComplexity: "medium",
-        confidence: 0.81
-      }),
+      stdout,
       timedOut: false,
       startedAt: "2026-07-01T12:34:59.958Z"
     };

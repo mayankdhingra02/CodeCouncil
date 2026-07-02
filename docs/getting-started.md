@@ -42,11 +42,12 @@ Run planning:
 codecouncil plan "Add password complexity validation" --agents mock-codex,mock-claude
 ```
 
-Approve one plan:
+Reconcile the plans into one candidate, then approve it explicitly:
 
 ```bash
 codecouncil sessions list
-codecouncil approve --session <session-id> --agent mock-codex
+codecouncil reconcile --session <session-id> --reconciler mock-codex
+codecouncil approve --session <session-id> --reconciled
 ```
 
 Run the implementation workflow:
@@ -100,4 +101,5 @@ Before a real-agent run, inspect and choose model/cost tradeoffs:
 ```bash
 codecouncil models list
 codecouncil plan "your task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+codecouncil reconcile --session <session-id> --reconciler codex --model codex=gpt-5.5
 ```

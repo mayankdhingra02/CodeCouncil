@@ -25,7 +25,7 @@ describe("solve workflow", () => {
     };
 
     expect(payload.workflow.status).toBe("planned");
-    expect(payload.workflow.nextRecommendedCommand).toContain("codecouncil approve");
+    expect(payload.workflow.nextRecommendedCommand).toContain("codecouncil reconcile");
     expect(payload.approvalArtifacts).toBeUndefined();
     await expect(readFile(payload.suggestedApproval.markdownPath, "utf8")).resolves.toContain(
       "Status: suggested, not yet approved"
@@ -85,7 +85,7 @@ describe("solve workflow", () => {
     };
 
     expect(resumePayload.workflow.status).toBe("planned");
-    expect(resumePayload.workflow.nextRecommendedCommand).toContain("codecouncil approve");
+    expect(resumePayload.workflow.nextRecommendedCommand).toContain("codecouncil reconcile");
   });
 
   it("dry-run does not create a session or execute agents", async () => {

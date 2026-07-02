@@ -28,7 +28,7 @@ flowchart TD
 
 ```text
 src/
-  agents/          agent interface, mocks, CLI adapters, plan persistence
+  agents/          agent interface, mocks, CLI adapters, plan/reconcile persistence
   benchmark/       task validation, strategy execution, metrics, summaries
   commands/        Commander command modules
   config/          zod schemas, defaults, config discovery
@@ -37,6 +37,7 @@ src/
   ignore/          .codecouncilignore parser/loader
   implementation/  implementation artifact persistence
   report/          final recommendation and markdown rendering
+  reconcile/       reconciled plan artifact rendering
   review/          pair generation, aggregation, review persistence
   safety/          sensitive path and risky command checks
   scoring/         deterministic implementation scoring
@@ -57,6 +58,10 @@ packages/
   approved-plan.json
   approved-plan.md
   plans/
+    comparison.json
+    comparison.md
+    reconciled.json
+    reconciled.md
   worktrees/
   diffs/
   runs/

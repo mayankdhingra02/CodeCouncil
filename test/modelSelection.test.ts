@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultConfig } from "../src/config/defaults.js";
 import {
   applyModelSelectionToConfig,
+  getAgentStageModel,
   parseModelSelection
 } from "../src/core/modelSelection.js";
 
@@ -69,5 +70,22 @@ describe("model selection", () => {
 
     expect(updated.agents["mock-codex"]?.models.plan).toBe("cheap-plan");
     expect(updated.agents["mock-claude"]?.models.plan).toBeUndefined();
+  });
+
+  it("uses the plan model as the default reconciliation model", () => {
+    const config = createDefaultConfig({
+      projectName: "model-selection-test"
+    });
+    const mockCodex = config.agents["mock-codex"];
+
+    if (!mockCodex) {
+      throw new Error("Expected mock-codex config.");
+    }
+
+    mockCodex.models.plan = "cheap-plan";
+    expect(getAgentStageModel(mockCodex, "reconcile")).toBe("cheap-plan");
+
+    mockCodex.models.reconcile = "strong-synthesis";
+    expect(getAgentStageModel(mockCodex, "reconcile")).toBe("strong-synthesis");
   });
 });

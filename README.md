@@ -101,7 +101,8 @@ git commit -m "initial demo app"
 codecouncil init
 codecouncil plan "Add password complexity validation" --agents mock-codex,mock-claude
 codecouncil sessions list
-codecouncil approve --session <session-id> --agent mock-codex
+codecouncil reconcile --session <session-id> --reconciler mock-codex
+codecouncil approve --session <session-id> --reconciled
 codecouncil implement --session <session-id> --agents mock-codex,mock-claude
 codecouncil test --session <session-id> --agents mock-codex,mock-claude
 codecouncil review --session <session-id> --reviewers mock-codex,mock-claude --targets mock-codex,mock-claude
@@ -146,7 +147,9 @@ codecouncil init
 codecouncil doctor
 codecouncil models list
 codecouncil plan "task" --agents codex,claude
+codecouncil reconcile --session <id> --reconciler codex
 codecouncil approve --session <id> --agent codex
+codecouncil approve --session <id> --reconciled
 codecouncil implement --session <id> --agents codex,claude
 codecouncil test --session <id> --agents codex,claude
 codecouncil review --session <id> --reviewers codex,claude --targets codex,claude
@@ -164,6 +167,7 @@ Set model defaults in `codecouncil.config.json`, or override per run:
 
 ```bash
 codecouncil plan "task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+codecouncil reconcile --session <id> --reconciler codex --model codex=gpt-5.5
 codecouncil review --session <id> --reviewers codex,claude --targets codex,claude --models codex=gpt-5.5,claude=fable
 ```
 

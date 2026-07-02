@@ -21,6 +21,7 @@ export { createMockClaudeAgent, createMockCodexAgent, MockAgent } from "./mockAg
 export {
   buildImplementationOutputFromCommand,
   buildPlanOutputFromCommand,
+  buildReconciliationOutputFromCommand,
   buildReviewOutputFromCommand,
   parseAgentStdout
 } from "./outputParsing.js";
@@ -32,6 +33,10 @@ export {
   estimatedComplexitySchema,
   implementationOutputSchema,
   planOutputSchema,
+  reconciledPlanSchema,
+  reconciliationOutputSchema,
+  reconciliationResolutionSchema,
+  rejectedReconciliationIdeaSchema,
   reviewOutputSchema,
   reviewVerdictSchema,
   type AgentAvailability,
@@ -41,6 +46,9 @@ export {
   type ImplementationOutput,
   type PlanInput,
   type PlanOutput,
+  type ReconciliationInput,
+  type ReconciliationOutput,
+  type ReconciliationPlanInput,
   type ReviewInput,
   type ReviewOutput,
   type ReviewVerdict

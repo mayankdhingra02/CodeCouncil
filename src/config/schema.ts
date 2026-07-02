@@ -28,12 +28,14 @@ export const agentConfigSchema = z
       .object({
         plan: z.string().min(1).optional(),
         implement: z.string().min(1).optional(),
+        reconcile: z.string().min(1).optional(),
         review: z.string().min(1).optional()
       })
       .strict()
       .default({}),
     planArgs: z.array(z.string()).default([]),
     implementArgs: z.array(z.string()).default([]),
+    reconcileArgs: z.array(z.string()).default([]),
     reviewArgs: z.array(z.string()).default([]),
     maxRuntimeSeconds: z.number().int().positive().default(900)
   })
@@ -45,6 +47,7 @@ const defaultAgentInputs = {
     command: "mock-codex",
     planArgs: [],
     implementArgs: [],
+    reconcileArgs: [],
     reviewArgs: [],
     maxRuntimeSeconds: 900
   },
@@ -53,6 +56,7 @@ const defaultAgentInputs = {
     command: "mock-claude",
     planArgs: [],
     implementArgs: [],
+    reconcileArgs: [],
     reviewArgs: [],
     maxRuntimeSeconds: 900
   }

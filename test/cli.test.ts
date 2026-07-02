@@ -20,6 +20,7 @@ describe("createCli", () => {
       "init",
       "models",
       "plan",
+      "reconcile",
       "report",
       "resume",
       "review",

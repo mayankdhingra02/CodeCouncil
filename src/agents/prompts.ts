@@ -1,4 +1,4 @@
-import type { PlanInput, ReviewInput, ImplementationInput } from "./types.js";
+import type { PlanInput, ReconciliationInput, ReviewInput, ImplementationInput } from "./types.js";
 
 export function createPlanningPrompt(input: PlanInput): string {
   return [
@@ -112,6 +112,86 @@ export function createReviewPrompt(input: ReviewInput): string {
         maintainabilityConcerns: ["maintainability concern"],
         suggestedFixes: ["concrete suggested fix"],
         recommendation: "what should happen next",
+        confidence: 0.75
+      },
+      null,
+      2
+    )
+  ].join("\n");
+}
+
+export function createReconciliationPrompt(input: ReconciliationInput): string {
+  return [
+    "You are participating in CodeCouncil as a plan reconciler.",
+    "",
+    safetyGuardrails(),
+    "",
+    `Task: ${input.task}`,
+    `Project: ${input.config.projectName}`,
+    `Base branch: ${input.config.baseBranch}`,
+    "",
+    "Instructions:",
+    "- Inspect the repository as needed, but do not edit files.",
+    "- Treat the deterministic comparison as the reproducible baseline.",
+    "- Resolve each listed major disagreement item-by-item.",
+    "- Use the anonymized plan aliases exactly as provided, such as agent-a or agent-b.",
+    "- Choose one alias only when that plan is clearly better; otherwise choose synthesis.",
+    "- Cite concrete file paths you inspected as evidence when possible.",
+    "- If a resolution cannot be verified from the repository, leave evidence empty and add an open human question.",
+    "- Reject ideas that are out of scope, risky, unverified, or weaker than the alternative.",
+    "- Do not auto-approve anything. Produce a candidate plan for human approval.",
+    "- Do not reveal hidden chain-of-thought.",
+    "- Provide concise public rationale only.",
+    "- Return structured JSON if possible.",
+    "",
+    "Anonymized plans:",
+    JSON.stringify(
+      input.plans.map(({ alias, plan }) => ({
+        alias,
+        summary: plan.summary,
+        assumptions: plan.assumptions,
+        proposedFilesToChange: plan.proposedFilesToChange,
+        stepByStepPlan: plan.stepByStepPlan,
+        risks: plan.risks,
+        testsToRun: plan.testsToRun,
+        estimatedComplexity: plan.estimatedComplexity,
+        confidence: plan.confidence
+      })),
+      null,
+      2
+    ),
+    "",
+    "Deterministic comparison baseline:",
+    JSON.stringify(input.comparison, null, 2),
+    "",
+    "Return only JSON with this shape:",
+    JSON.stringify(
+      {
+        mergedPlan: {
+          summary: "short merged implementation plan",
+          assumptions: ["assumption"],
+          files: ["path or area"],
+          steps: ["step"],
+          risks: ["risk"],
+          tests: ["test command"],
+          estimatedComplexity: "low|medium|high"
+        },
+        resolutions: [
+          {
+            disagreement: "specific disagreement from deterministic comparison",
+            chosenAgentId: "agent-a|agent-b|synthesis",
+            rationale: "concise public rationale",
+            evidence: ["file/path.ts"]
+          }
+        ],
+        rejectedIdeas: [
+          {
+            agentId: "agent-a",
+            item: "idea or proposed change",
+            why: "why it was not included"
+          }
+        ],
+        openQuestionsForHuman: ["question"],
         confidence: 0.75
       },
       null,

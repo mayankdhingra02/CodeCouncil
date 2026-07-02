@@ -6,11 +6,13 @@ import { getAgentStageModel, injectModelArg } from "../core/modelSelection.js";
 import {
   buildImplementationOutputFromCommand,
   buildPlanOutputFromCommand,
+  buildReconciliationOutputFromCommand,
   buildReviewOutputFromCommand
 } from "./outputParsing.js";
 import {
   createImplementationPrompt,
   createPlanningPrompt,
+  createReconciliationPrompt,
   createReviewPrompt
 } from "./prompts.js";
 import {
@@ -25,6 +27,8 @@ import type {
   ImplementationOutput,
   PlanInput,
   PlanOutput,
+  ReconciliationInput,
+  ReconciliationOutput,
   ReviewInput,
   ReviewOutput
 } from "./types.js";
@@ -38,7 +42,7 @@ interface CliAgentOptions {
 }
 
 export class CliAgent implements CodeCouncilAgent {
-  public readonly capabilities: readonly AgentCapability[] = ["plan", "implement", "review"];
+  public readonly capabilities: readonly AgentCapability[] = ["plan", "implement", "reconcile", "review"];
   public readonly config: AgentConfig;
   public readonly displayName: string;
   public readonly id: AgentId;
@@ -143,6 +147,28 @@ export class CliAgent implements CodeCouncilAgent {
       displayName: this.displayName,
       result,
       targetAgentId: input.targetAgentId
+    });
+  }
+
+  public async reconcilePlans(input: ReconciliationInput): Promise<ReconciliationOutput> {
+    const prompt = createReconciliationPrompt(input);
+    const reconcileArgs = this.config.reconcileArgs.length > 0 ? this.config.reconcileArgs : this.config.planArgs;
+    const args = buildPromptArgs({
+      command: this.config.command,
+      args: injectModelArg(reconcileArgs, getAgentStageModel(this.config, "reconcile"))
+    });
+    const result = await this.runner.run({
+      args,
+      command: this.config.command,
+      cwd: input.repoRoot,
+      input: prompt,
+      timeoutMs: this.config.maxRuntimeSeconds * 1000
+    });
+
+    return buildReconciliationOutputFromCommand({
+      agentId: this.id,
+      displayName: this.displayName,
+      result
     });
   }
 }

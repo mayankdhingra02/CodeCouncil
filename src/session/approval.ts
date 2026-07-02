@@ -2,14 +2,15 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
+import { reconciliationOutputSchema } from "../agents/types.js";
 import { isErrnoException } from "../core/errors.js";
-import type { PlanOutput } from "../agents/types.js";
+import type { PlanOutput, ReconciliationOutput } from "../agents/types.js";
 import type { TaskSession } from "./schema.js";
 
 export const approvedPlanSchema = z
   .object({
     approvedAt: z.string().datetime({ offset: true }),
-    approvedBy: z.enum(["agent", "manual"]),
+    approvedBy: z.enum(["agent", "manual", "reconciled"]),
     agentId: z.string().optional(),
     plan: z.unknown().optional(),
     sessionId: z.string().min(1),
@@ -55,6 +56,24 @@ export async function approveManualPlan(
   });
 
   return writeApprovalArtifacts(session, approvedPlan, renderManualApprovalMarkdown(session));
+}
+
+export async function approveReconciledPlan(
+  session: TaskSession,
+  now = new Date()
+): Promise<ApprovalArtifacts> {
+  const reconciliationPath = path.join(session.paths.plansDir, "reconciled.json");
+  const reconciliation = reconciliationOutputSchema.parse(JSON.parse(await readFile(reconciliationPath, "utf8")) as unknown);
+  const approvedPlan = approvedPlanSchema.parse({
+    approvedAt: now.toISOString(),
+    approvedBy: "reconciled",
+    agentId: reconciliation.reconcilerAgentId,
+    plan: reconciliation,
+    sessionId: session.id,
+    summary: reconciliation.mergedPlan.summary
+  });
+
+  return writeApprovalArtifacts(session, approvedPlan, renderReconciledApprovalMarkdown(approvedPlan, reconciliation));
 }
 
 export async function approvePlanFromMarkdown(
@@ -177,6 +196,37 @@ function renderManualApprovalMarkdown(session: TaskSession): string {
     "## Tests To Run",
     "",
     "- ",
+    ""
+  ].join("\n");
+}
+
+function renderReconciledApprovalMarkdown(
+  approvedPlan: ApprovedPlan,
+  reconciliation: ReconciliationOutput
+): string {
+  return [
+    "# Approved Plan",
+    "",
+    `Session: \`${approvedPlan.sessionId}\``,
+    `Source: reconciled plan from \`${reconciliation.reconcilerAgentId}\``,
+    `Approved at: ${approvedPlan.approvedAt}`,
+    "",
+    "## Summary",
+    "",
+    reconciliation.mergedPlan.summary,
+    "",
+    renderList("Assumptions", reconciliation.mergedPlan.assumptions),
+    renderList("Files Proposed", reconciliation.mergedPlan.files),
+    renderList("Step By Step Plan", reconciliation.mergedPlan.steps),
+    renderList("Risks", reconciliation.mergedPlan.risks),
+    renderList("Tests To Run", reconciliation.mergedPlan.tests),
+    "## Reconciliation Notes",
+    "",
+    ...reconciliation.resolutions.map(
+      (resolution) => `- ${resolution.disagreement}: ${resolution.rationale}`
+    ),
+    "",
+    "This approved plan was copied from the reconciled candidate plan. Edit this file before implementation if you want to refine it.",
     ""
   ].join("\n");
 }
