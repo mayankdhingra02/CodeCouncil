@@ -126,6 +126,13 @@ export function registerReconcileCommand(program: Command): void {
         task: session.task
       });
       let reconciliation = deAnonymizeReconciliationOutput(rawReconciliation, planAliases);
+      const sourcePlanAgentIds = plans.map((plan) => plan.agentId);
+      const reconcilerWasAlsoPlanner = sourcePlanAgentIds.includes(reconciler.id);
+      const reconcilerBiasMetadata = reconcilerWasAlsoPlanner
+        ? {
+          reconcilerBiasWarning: "The reconciler also produced one of the source plans, so this reconciliation may contain model self-preference bias."
+        }
+        : {};
       reconciliation = reconciliationOutputSchema.parse({
         ...reconciliation,
         metadata: {
@@ -133,6 +140,9 @@ export function registerReconcileCommand(program: Command): void {
           comparisonPath: path.join(session.paths.plansDir, "comparison.json"),
           deterministicBaseline: true,
           planAliases,
+          ...reconcilerBiasMetadata,
+          reconcilerWasAlsoPlanner,
+          sourcePlanAgentIds,
           sourcePlanCount: plans.length
         }
       });
@@ -385,6 +395,7 @@ function formatReconcileOutputLines(input: {
     "Open human questions:",
     ...formatListItems(input.reconciliation.openQuestionsForHuman),
     "",
+    ...formatBiasWarningLines(input.reconciliation),
     ...formatModelSelectionLines(input.modelSelection),
     `JSON: ${path.relative(input.cwd, input.artifacts.jsonPath) || "."}`,
     `Markdown: ${path.relative(input.cwd, input.artifacts.markdownPath) || "."}`,
@@ -412,5 +423,16 @@ function formatModelSelectionLines(selection: ModelSelection): string[] {
       selection.defaultModel ? `default=${selection.defaultModel}` : "",
       ...assignments.map(([agentId, model]) => `${agentId}=${model}`)
     ].filter(Boolean).join(", ")}`
+  ];
+}
+
+function formatBiasWarningLines(reconciliation: ReconciliationOutput): string[] {
+  if (reconciliation.metadata["reconcilerWasAlsoPlanner"] !== true) {
+    return [];
+  }
+
+  return [
+    "Bias note: reconciler also produced one source plan; inspect the reconciled plan for possible self-preference.",
+    ""
   ];
 }

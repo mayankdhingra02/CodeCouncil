@@ -77,6 +77,7 @@ export function renderReconciliationMarkdown(
     `Generated: ${reconciliation.generatedAt}`,
     `Confidence: ${Math.round(reconciliation.confidence * 100)}%`,
     "",
+    renderBiasWarning(reconciliation),
     renderAliasMap(reconciliation.metadata["planAliases"]),
     "## Summary",
     "",
@@ -99,6 +100,23 @@ export function renderReconciliationMarkdown(
     "This is a candidate plan only. It is not approved automatically.",
     "",
     `Approve this reconciled plan with: \`codecouncil approve --session ${session.id} --reconciled\``,
+    ""
+  ].join("\n");
+}
+
+function renderBiasWarning(reconciliation: ReconciliationOutput): string {
+  if (reconciliation.metadata["reconcilerWasAlsoPlanner"] !== true) {
+    return "";
+  }
+
+  const warning = typeof reconciliation.metadata["reconcilerBiasWarning"] === "string"
+    ? reconciliation.metadata["reconcilerBiasWarning"]
+    : "The reconciler also produced one of the source plans, so this reconciliation may contain model self-preference bias.";
+
+  return [
+    "## Bias Disclosure",
+    "",
+    `Warning: ${warning}`,
     ""
   ].join("\n");
 }

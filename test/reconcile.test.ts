@@ -49,6 +49,9 @@ describe("reconcile CLI", () => {
         };
         metadata: {
           planAliases?: Record<string, string>;
+          reconcilerBiasWarning?: string;
+          reconcilerWasAlsoPlanner?: boolean;
+          sourcePlanAgentIds?: string[];
         };
         rejectedIdeas: Array<{ agentId: string }>;
         reconcilerAgentId: string;
@@ -67,6 +70,11 @@ describe("reconcile CLI", () => {
     expect(Object.values(reconcilePayload.reconciliation.metadata.planAliases ?? {})).toEqual(
       expect.arrayContaining(["mock-codex", "mock-claude"])
     );
+    expect(reconcilePayload.reconciliation.metadata.reconcilerWasAlsoPlanner).toBe(true);
+    expect(reconcilePayload.reconciliation.metadata.sourcePlanAgentIds).toEqual(
+      expect.arrayContaining(["mock-codex", "mock-claude"])
+    );
+    expect(reconcilePayload.reconciliation.metadata.reconcilerBiasWarning).toContain("self-preference bias");
     expect(reconcilePayload.reconciliation.resolutions.map((resolution) => resolution.chosenAgentId)).not.toContain("agent-a");
     expect(reconcilePayload.reconciliation.rejectedIdeas.map((idea) => idea.agentId)).not.toContain("agent-a");
     expect(reconcilePayload.reconciliation.rejectedIdeas.map((idea) => idea.agentId)).toEqual(
@@ -75,6 +83,9 @@ describe("reconcile CLI", () => {
     await expect(readFile(reconcilePayload.artifacts.jsonPath, "utf8")).resolves.toContain("mergedPlan");
     await expect(readFile(reconcilePayload.artifacts.markdownPath, "utf8")).resolves.toContain(
       "codecouncil approve"
+    );
+    await expect(readFile(reconcilePayload.artifacts.markdownPath, "utf8")).resolves.toContain(
+      "## Bias Disclosure"
     );
 
     await runCli([
