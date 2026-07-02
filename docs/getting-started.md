@@ -99,12 +99,18 @@ It stops after planning unless you explicitly approve:
 ```bash
 codecouncil solve "Add password complexity validation" \
   --agents mock-codex,mock-claude \
+  --reconcile rotate \
   --auto-approve-plan \
   --implement both \
   --run-tests \
   --review \
   --report
 ```
+
+When `--reconcile` is used, auto-approval approves the reconciled candidate
+rather than a single agent's original plan. Solve also writes internal stage
+output under `.codecouncil/runs/<session>/workflow/` so failures are easier to
+debug.
 
 ## Real Agents
 

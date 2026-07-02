@@ -149,6 +149,7 @@ Talking point: the human remains the final gate.
 
 ```bash
 codecouncil solve "Add password complexity validation" --agents mock-codex,mock-claude
+codecouncil solve "Add password complexity validation" --agents mock-codex,mock-claude --reconcile rotate --auto-approve-plan --implement both --run-tests --review --report
 codecouncil resume --session <session-id>
 ```
 

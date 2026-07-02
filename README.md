@@ -187,6 +187,7 @@ codecouncil review --session <id> --reviewers codex,claude --targets codex,claud
 codecouncil safety --session <id>
 codecouncil report --session <id>
 codecouncil solve "task" --agents codex,claude
+codecouncil solve "task" --agents codex,claude --reconcile rotate --auto-approve-plan --implement both --run-tests --review --report
 codecouncil benchmark --tasks tasks.json --agents codex,claude --yes
 ```
 

@@ -99,6 +99,9 @@ export async function collectWorkflowArtifacts(
   const reviewFiles = await listExistingFiles(session.paths.reviewsDir, (fileName) =>
     /^.+\.(json|md)$/u.test(fileName)
   );
+  const workflowOutputFiles = await listExistingFiles(path.join(session.paths.sessionDir, "workflow"), (fileName) =>
+    /^.+\.(json|log)$/u.test(fileName)
+  );
 
   if (planFiles.length > 0) {
     artifacts["plans"] = planFiles;
@@ -131,6 +134,10 @@ export async function collectWorkflowArtifacts(
 
   if (reviewFiles.length > 0) {
     artifacts["reviews"] = reviewFiles;
+  }
+
+  if (workflowOutputFiles.length > 0) {
+    artifacts["workflowOutputs"] = workflowOutputFiles;
   }
 
   await addIfExists(artifacts, "reviewSummary", path.join(session.paths.reviewsDir, "summary.json"));

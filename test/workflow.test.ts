@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,6 +57,41 @@ describe("solve workflow", () => {
     );
     await expect(readFile(payload.approvalArtifacts.markdownPath, "utf8")).resolves.toContain(
       "# Approved Plan"
+    );
+  });
+
+  it("can reconcile during solve and auto approve the reconciled candidate", async () => {
+    const cwd = await makeTempDir();
+    const stdout = await runCli([
+      "--cwd",
+      cwd,
+      "--json",
+      "solve",
+      "--agents",
+      "mock-codex,mock-claude",
+      "--reconcile",
+      "rotate",
+      "--auto-approve-plan",
+      "Add password reset reconciliation"
+    ]);
+    const payload = JSON.parse(stdout) as {
+      approvalArtifacts: { jsonPath: string };
+      internalCommandOutputs: Array<{ stage: string; stdoutPath: string }>;
+      reconcileStrategy: string;
+      workflow: { artifacts: Record<string, string[]>; status: string };
+    };
+
+    expect(payload.reconcileStrategy).toBe("rotate");
+    expect(payload.workflow.status).toBe("approved");
+    expect(payload.workflow.artifacts["reconciledPlan"]).toHaveLength(1);
+    expect(payload.workflow.artifacts["reconciliationRotation"]).toHaveLength(1);
+    expect(payload.workflow.artifacts["workflowOutputs"]?.length).toBeGreaterThan(0);
+    expect(payload.internalCommandOutputs.map((output) => output.stage)).toEqual(["reconcile"]);
+    await expect(readFile(payload.approvalArtifacts.jsonPath, "utf8")).resolves.toContain(
+      "\"approvedBy\": \"reconciled\""
+    );
+    await expect(readFile(payload.internalCommandOutputs[0]?.stdoutPath ?? "", "utf8")).resolves.toContain(
+      "\"command\": \"reconcile\""
     );
   });
 
@@ -137,6 +172,48 @@ describe("solve workflow", () => {
     expect(workflow.artifacts["comparison"]).toHaveLength(1);
     expect(workflow.artifacts["suggestedApproval"]).toHaveLength(1);
   });
+
+  it("preserves completed workflow stages and command output after a later failure", async () => {
+    const cwd = await makeTempDir();
+
+    await expect(
+      runCli([
+        "--cwd",
+        cwd,
+        "--json",
+        "solve",
+        "--agents",
+        "mock-codex,mock-claude",
+        "--auto-approve-plan",
+        "--implement",
+        "missing-agent",
+        "Trigger an implementation failure"
+      ])
+    ).rejects.toThrow();
+
+    const sessionDir = await getOnlySessionDir(cwd);
+    const workflow = JSON.parse(await readFile(path.join(sessionDir, "workflow.json"), "utf8")) as {
+      artifacts: Record<string, string[]>;
+      completedStages: string[];
+      failedStage: string;
+      status: string;
+    };
+    const commandMetadata = JSON.parse(
+      await readFile(path.join(sessionDir, "workflow", "01-implement.command.json"), "utf8")
+    ) as {
+      stage: string;
+      status: string;
+    };
+
+    expect(workflow.status).toBe("failed");
+    expect(workflow.failedStage).toBe("implement");
+    expect(workflow.completedStages).toEqual(["created", "planned", "approved"]);
+    expect(workflow.artifacts["workflowOutputs"]?.length).toBeGreaterThan(0);
+    expect(commandMetadata).toMatchObject({
+      stage: "implement",
+      status: "failed"
+    });
+  });
 });
 
 async function runCli(argv: readonly string[]): Promise<string> {
@@ -158,6 +235,14 @@ async function runCli(argv: readonly string[]): Promise<string> {
 
 async function makeTempDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "codecouncil-workflow-"));
+}
+
+async function getOnlySessionDir(cwd: string): Promise<string> {
+  const runsDir = path.join(cwd, ".codecouncil", "runs");
+  const sessions = await readdir(runsDir);
+
+  expect(sessions).toHaveLength(1);
+  return path.join(runsDir, sessions[0] ?? "");
 }
 
 async function pathExists(filePath: string): Promise<boolean> {

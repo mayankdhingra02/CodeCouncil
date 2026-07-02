@@ -79,12 +79,19 @@ To continue, pass explicit flags:
 codecouncil solve "Add password reset flow" \
   --agents codex,claude \
   --models codex=gpt-5.4-mini,claude=sonnet \
+  --reconcile rotate \
   --auto-approve-plan \
   --implement both \
   --run-tests \
   --review \
   --report
 ```
+
+`--reconcile` runs single reconciliation by default; `--reconcile rotate` asks
+each source-plan agent to produce a reconciled candidate and approves the
+recommended reconciled candidate only when `--auto-approve-plan` is also passed.
+Sub-command JSON/stdout/stderr artifacts from solve stages are saved under
+`.codecouncil/runs/<session>/workflow/` for debugging and resume context.
 
 ## Resume
 

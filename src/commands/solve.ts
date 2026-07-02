@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";
 
@@ -9,6 +9,7 @@ import {
   parseModelSelection,
   type ModelSelection
 } from "../core/modelSelection.js";
+import { redactSecrets } from "../core/redact.js";
 import { runDoctorChecks, type DoctorCheck } from "./doctor.js";
 import { runPlanningStage, type PlanningStageResult } from "../workflow/planning.js";
 import {
@@ -24,6 +25,7 @@ import {
   appendSessionEvent,
   approveAgentPlan,
   approvePlanFromMarkdown,
+  approveReconciledPlan,
   createTaskSession,
   loadTaskSession,
   type ApprovalArtifacts,
@@ -50,6 +52,7 @@ interface SolveOptions {
   maxDuration?: string;
   model?: string[];
   models?: string;
+  reconcile?: boolean | string;
   report?: boolean;
   review?: boolean;
   runTests?: boolean;
@@ -67,6 +70,15 @@ interface SuggestedApprovalArtifacts {
   sourceAgentId?: string;
 }
 
+interface InternalCliCommandArtifacts {
+  commandMetadataPath: string;
+  durationMs: number;
+  stage: string;
+  status: "success" | "failed";
+  stderrPath: string;
+  stdoutPath: string;
+}
+
 export function registerSolveCommand(program: Command): void {
   program
     .command("solve")
@@ -78,6 +90,7 @@ export function registerSolveCommand(program: Command): void {
     .option("--implement <agent|both>", "implementation agent id, comma-separated ids, or both")
     .option("-m, --model <model>", "model override for this solve run; use agent=model for one agent", collectRepeatableOption)
     .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5,claude=sonnet")
+    .option("--reconcile [strategy]", "run reconciliation before approval; strategy: single or rotate", parseSolveReconcileOption)
     .option("--run-tests", "run the test phase after implementation")
     .option("--review", "run cross-agent review after implementation")
     .option("--report", "generate a final report after requested stages")
@@ -142,6 +155,9 @@ export function registerSolveCommand(program: Command): void {
 
       let session: TaskSession | undefined;
       let currentStage = "created";
+      const completedStages: WorkflowStatus[] = [];
+      const internalCommandOutputs: InternalCliCommandArtifacts[] = [];
+      const reconcileStrategy = resolveSolveReconcileStrategy(options.reconcile);
 
       try {
         session = await createTaskSession({
@@ -149,9 +165,10 @@ export function registerSolveCommand(program: Command): void {
           rootDir: runtime.loadedConfig.rootDir,
           task
         });
+        addCompletedStage(completedStages, "created");
         await saveWorkflowState(session, {
           artifacts: await collectWorkflowArtifacts(session),
-          completedStages: ["created"],
+          completedStages,
           status: "created"
         });
 
@@ -187,12 +204,49 @@ export function registerSolveCommand(program: Command): void {
           session
         });
         let artifacts = await collectWorkflowArtifacts(session);
+        addCompletedStage(completedStages, "planned");
         await saveWorkflowState(session, {
           artifacts,
-          completedStages: ["created", "planned"],
+          completedStages,
           status: "planned"
         });
+
+        if (reconcileStrategy) {
+          currentStage = "reconcile";
+          assertWithinDeadline(deadlineMs, currentStage);
+          internalCommandOutputs.push(await runInternalCliCommand(
+            [
+              ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
+              "reconcile",
+              "--session",
+              session.id,
+              "--strategy",
+              reconcileStrategy,
+              ...modelArgs
+            ],
+            {
+              index: internalCommandOutputs.length + 1,
+              session,
+              stage: "reconcile"
+            }
+          ));
+          artifacts = await collectWorkflowArtifacts(session);
+          await saveWorkflowState(session, {
+            artifacts,
+            completedStages,
+            status: "planned"
+          });
+        }
+
+        const shouldAttemptApproval = options.approvedPlan !== undefined || options.autoApprovePlan === true;
+
+        if (shouldAttemptApproval) {
+          currentStage = "approve";
+          assertWithinDeadline(deadlineMs, currentStage);
+        }
+
         const approvalArtifacts = await maybeApprovePlan({
+          didReconcile: reconcileStrategy !== undefined,
           options,
           planning,
           runtimeCwd: runtime.commandContext.cwd,
@@ -200,7 +254,6 @@ export function registerSolveCommand(program: Command): void {
         });
 
         if (approvalArtifacts) {
-          currentStage = "approve";
           await appendSessionEvent(session, {
             type: "plan.approved",
             status: "success",
@@ -211,9 +264,10 @@ export function registerSolveCommand(program: Command): void {
             }
           });
           artifacts = await collectWorkflowArtifacts(session);
+          addCompletedStage(completedStages, "approved");
           await saveWorkflowState(session, {
             artifacts,
-            completedStages: ["created", "planned", "approved"],
+            completedStages,
             status: "approved"
           });
         }
@@ -229,19 +283,27 @@ export function registerSolveCommand(program: Command): void {
         if (implementationAgents.length > 0 && canProceedPastPlanning) {
           currentStage = "implement";
           assertWithinDeadline(deadlineMs, currentStage);
-          await runInternalCliCommand([
-            ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
-            "implement",
-            "--session",
-            session.id,
-            "--agents",
-            implementationAgents.join(","),
-            ...modelArgs
-          ]);
+          internalCommandOutputs.push(await runInternalCliCommand(
+            [
+              ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
+              "implement",
+              "--session",
+              session.id,
+              "--agents",
+              implementationAgents.join(","),
+              ...modelArgs
+            ],
+            {
+              index: internalCommandOutputs.length + 1,
+              session,
+              stage: "implement"
+            }
+          ));
           artifacts = await collectWorkflowArtifacts(session);
+          addCompletedStage(completedStages, "implemented");
           await saveWorkflowState(session, {
             artifacts,
-            completedStages: ["created", "planned", "approved", "implemented"],
+            completedStages,
             status: "implemented"
           });
         }
@@ -249,18 +311,26 @@ export function registerSolveCommand(program: Command): void {
         if (options.runTests && implementationAgents.length > 0 && canProceedPastPlanning) {
           currentStage = "test";
           assertWithinDeadline(deadlineMs, currentStage);
-          await runInternalCliCommand([
-            ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
-            "test",
-            "--session",
-            session.id,
-            "--agents",
-            implementationAgents.join(",")
-          ]);
+          internalCommandOutputs.push(await runInternalCliCommand(
+            [
+              ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
+              "test",
+              "--session",
+              session.id,
+              "--agents",
+              implementationAgents.join(",")
+            ],
+            {
+              index: internalCommandOutputs.length + 1,
+              session,
+              stage: "test"
+            }
+          ));
           artifacts = await collectWorkflowArtifacts(session);
+          addCompletedStage(completedStages, "tested");
           await saveWorkflowState(session, {
             artifacts,
-            completedStages: ["created", "planned", "approved", "implemented", "tested"],
+            completedStages,
             status: "tested"
           });
         } else if (options.runTests) {
@@ -270,23 +340,29 @@ export function registerSolveCommand(program: Command): void {
         if (options.review && implementationAgents.length > 1 && canProceedPastPlanning) {
           currentStage = "review";
           assertWithinDeadline(deadlineMs, currentStage);
-          await runInternalCliCommand([
-            ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
-            "review",
-            "--session",
-            session.id,
-            "--reviewers",
-            implementationAgents.join(","),
-            "--targets",
-            implementationAgents.join(","),
-            ...modelArgs
-          ]);
+          internalCommandOutputs.push(await runInternalCliCommand(
+            [
+              ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
+              "review",
+              "--session",
+              session.id,
+              "--reviewers",
+              implementationAgents.join(","),
+              "--targets",
+              implementationAgents.join(","),
+              ...modelArgs
+            ],
+            {
+              index: internalCommandOutputs.length + 1,
+              session,
+              stage: "review"
+            }
+          ));
           artifacts = await collectWorkflowArtifacts(session);
+          addCompletedStage(completedStages, "reviewed");
           await saveWorkflowState(session, {
             artifacts,
-            completedStages: ["created", "planned", "approved", "implemented", "tested", "reviewed"].filter(
-              (stage) => stage !== "tested" || artifacts["tests"]?.length
-            ) as WorkflowStatus[],
+            completedStages,
             status: "reviewed"
           });
         } else if (options.review) {
@@ -296,24 +372,24 @@ export function registerSolveCommand(program: Command): void {
         if (options.report && implementationAgents.length > 0 && canProceedPastPlanning) {
           currentStage = "report";
           assertWithinDeadline(deadlineMs, currentStage);
-          await runInternalCliCommand([
-            ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
-            "report",
-            "--session",
-            session.id
-          ]);
+          internalCommandOutputs.push(await runInternalCliCommand(
+            [
+              ...buildInternalGlobalArgs(runtime.commandContext.cwd, runtime.loadedConfig.path, options.workspaceDir),
+              "report",
+              "--session",
+              session.id
+            ],
+            {
+              index: internalCommandOutputs.length + 1,
+              session,
+              stage: "report"
+            }
+          ));
           artifacts = await collectWorkflowArtifacts(session);
+          addCompletedStage(completedStages, "reported");
           await saveWorkflowState(session, {
             artifacts,
-            completedStages: [
-              "created",
-              "planned",
-              "approved",
-              "implemented",
-              ...(artifacts["tests"]?.length ? (["tested"] as const) : []),
-              ...(artifacts["reviewSummary"]?.length ? (["reviewed"] as const) : []),
-              "reported"
-            ],
+            completedStages,
             status: "reported"
           });
         } else if (options.report) {
@@ -330,7 +406,9 @@ export function registerSolveCommand(program: Command): void {
             command: "solve",
             config: formatConfigSource(runtime.loadedConfig),
             doctorChecks,
+            internalCommandOutputs,
             modelSelection,
+            reconcileStrategy,
             sessionDir: session.paths.sessionDir,
             sessionId: session.id,
             skippedStages,
@@ -356,7 +434,7 @@ export function registerSolveCommand(program: Command): void {
         if (session) {
           await saveWorkflowState(session, {
             artifacts: await collectWorkflowArtifacts(session),
-            completedStages: [],
+            completedStages,
             failedStage: currentStage,
             status: "failed"
           });
@@ -420,6 +498,7 @@ export function registerResumeCommand(program: Command): void {
 }
 
 async function maybeApprovePlan(input: {
+  didReconcile: boolean;
   options: SolveOptions;
   planning: PlanningStageResult;
   runtimeCwd: string;
@@ -434,6 +513,10 @@ async function maybeApprovePlan(input: {
   }
 
   if (input.options.autoApprovePlan) {
+    if (input.didReconcile) {
+      return approveReconciledPlan(input.session);
+    }
+
     const agentId = input.planning.comparison.suggestedImplementationAgent ?? input.planning.agents[0];
 
     if (!agentId) {
@@ -539,16 +622,148 @@ function buildInternalGlobalArgs(cwd: string, configPath: string | undefined, wo
   return args;
 }
 
-async function runInternalCliCommand(argv: readonly string[]): Promise<void> {
+async function runInternalCliCommand(
+  argv: readonly string[],
+  options: {
+    index: number;
+    session: TaskSession;
+    stage: string;
+  }
+): Promise<InternalCliCommandArtifacts> {
   const { createCli } = await import("../cli.js");
   const originalWrite = process.stdout.write;
+  const originalErrorWrite = process.stderr.write;
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
+  const startedAt = new Date();
 
-  process.stdout.write = (() => true) as typeof process.stdout.write;
+  process.stdout.write = captureWrite(stdoutChunks) as typeof process.stdout.write;
+  process.stderr.write = captureWrite(stderrChunks) as typeof process.stderr.write;
 
   try {
     await createCli().parseAsync(["node", "codecouncil", ...argv]);
+    return await saveInternalCliCommandArtifacts({
+      argv,
+      completedAt: new Date(),
+      error: undefined,
+      index: options.index,
+      session: options.session,
+      stage: options.stage,
+      startedAt,
+      status: "success",
+      stderr: stderrChunks.join(""),
+      stdout: stdoutChunks.join("")
+    });
+  } catch (error) {
+    await saveInternalCliCommandArtifacts({
+      argv,
+      completedAt: new Date(),
+      error: error instanceof Error ? error.message : "Internal CLI command failed.",
+      index: options.index,
+      session: options.session,
+      stage: options.stage,
+      startedAt,
+      status: "failed",
+      stderr: stderrChunks.join(""),
+      stdout: stdoutChunks.join("")
+    });
+    throw error;
   } finally {
     process.stdout.write = originalWrite;
+    process.stderr.write = originalErrorWrite;
+  }
+}
+
+function captureWrite(chunks: string[]): NodeJS.WriteStream["write"] {
+  return ((
+    chunk: string | Uint8Array,
+    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+    callback?: (error?: Error | null) => void
+  ): boolean => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk));
+
+    const done = typeof encodingOrCallback === "function" ? encodingOrCallback : callback;
+    done?.();
+    return true;
+  }) as NodeJS.WriteStream["write"];
+}
+
+async function saveInternalCliCommandArtifacts(input: {
+  argv: readonly string[];
+  completedAt: Date;
+  error: string | undefined;
+  index: number;
+  session: TaskSession;
+  stage: string;
+  startedAt: Date;
+  status: "success" | "failed";
+  stderr: string;
+  stdout: string;
+}): Promise<InternalCliCommandArtifacts> {
+  const workflowDir = path.join(input.session.paths.sessionDir, "workflow");
+  await mkdir(workflowDir, { recursive: true });
+
+  const basename = `${String(input.index).padStart(2, "0")}-${sanitizeArtifactName(input.stage)}`;
+  const stdoutPath = path.join(workflowDir, `${basename}.stdout.log`);
+  const stderrPath = path.join(workflowDir, `${basename}.stderr.log`);
+  const commandMetadataPath = path.join(workflowDir, `${basename}.command.json`);
+  const durationMs = input.completedAt.getTime() - input.startedAt.getTime();
+  const metadata = {
+    argv: input.argv.map((arg) => redactSecrets(arg)),
+    completedAt: input.completedAt.toISOString(),
+    durationMs,
+    ...(input.error ? { error: redactSecrets(input.error) } : {}),
+    stage: input.stage,
+    startedAt: input.startedAt.toISOString(),
+    status: input.status
+  };
+
+  await writeFile(stdoutPath, redactSecrets(input.stdout), "utf8");
+  await writeFile(stderrPath, redactSecrets(input.stderr), "utf8");
+  await writeFile(commandMetadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+
+  return {
+    commandMetadataPath,
+    durationMs,
+    stage: input.stage,
+    status: input.status,
+    stderrPath,
+    stdoutPath
+  };
+}
+
+function sanitizeArtifactName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_.-]+/gu, "-").replace(/^-+|-+$/gu, "") || "command";
+}
+
+function parseSolveReconcileOption(value: string): "single" | "rotate" {
+  const strategy = value.trim().toLowerCase();
+
+  if (strategy === "single" || strategy === "rotate") {
+    return strategy;
+  }
+
+  throw new CodeCouncilError(`Unknown reconciliation strategy "${value}". Use "single" or "rotate".`, {
+    code: "INVALID_RECONCILE_STRATEGY",
+    exitCode: 2
+  });
+}
+
+function resolveSolveReconcileStrategy(value: boolean | string | undefined): "single" | "rotate" | undefined {
+  if (value === undefined || value === false) {
+    return undefined;
+  }
+
+  if (value === true) {
+    return "single";
+  }
+
+  return parseSolveReconcileOption(value);
+}
+
+function addCompletedStage(stages: WorkflowStatus[], stage: WorkflowStatus): void {
+  if (!stages.includes(stage)) {
+    stages.push(stage);
   }
 }
 
@@ -580,6 +795,10 @@ function assertWithinDeadline(deadlineMs: number | undefined, stage: string): vo
 
 function buildPlannedStages(options: SolveOptions): string[] {
   const stages = ["create-session", "doctor", "plan", "compare", "suggest-approval"];
+
+  if (options.reconcile !== undefined && options.reconcile !== false) {
+    stages.push("reconcile");
+  }
 
   if (options.autoApprovePlan || options.approvedPlan) {
     stages.push("approve");
