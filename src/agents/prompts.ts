@@ -95,7 +95,11 @@ export function createReviewPrompt(input: ReviewInput): string {
       ? input.safetyWarnings.join("\n")
       : "(No safety warnings were reported.)",
     "",
-    "Return JSON with this shape:",
+    "Diff:",
+    input.diff,
+    "",
+    "Return only JSON with this shape:",
+    "Do not include the diff in your response.",
     JSON.stringify(
       {
         verdict: "approve|request_changes|reject",
@@ -112,10 +116,7 @@ export function createReviewPrompt(input: ReviewInput): string {
       },
       null,
       2
-    ),
-    "",
-    "Diff:",
-    input.diff
+    )
   ].join("\n");
 }
 
