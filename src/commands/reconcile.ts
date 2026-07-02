@@ -498,9 +498,9 @@ function buildRotationComparison(input: {
     };
   });
   const rankedCandidates = [...candidates].sort((left, right) =>
+    right.synthesisSelections - left.synthesisSelections ||
     left.reconcilerPlanSelections - right.reconcilerPlanSelections ||
     left.openQuestions - right.openQuestions ||
-    right.synthesisSelections - left.synthesisSelections ||
     right.confidence - left.confidence ||
     input.reconcilerAgentIds.indexOf(left.reconcilerAgentId) - input.reconcilerAgentIds.indexOf(right.reconcilerAgentId)
   );
@@ -517,12 +517,13 @@ function buildRotationComparison(input: {
     candidates,
     generatedAt: new Date().toISOString(),
     recommendedReconcilerAgentId: recommended.reconcilerAgentId,
-    recommendationReason: "Selected by lowest own-plan selections, then fewest open questions, then most synthesis selections, then highest confidence.",
+    recommendationReason: "Selected by most synthesis selections, then lowest own-plan selections, then fewest open questions, then highest confidence. This ranking measures reconciliation/deference behavior, not correctness.",
     reconcilerAgentIds: [...input.reconcilerAgentIds],
     sessionId: input.session.id,
     sourcePlanAgentIds: [...input.sourcePlanAgentIds],
     strategy: "rotate",
     warnings: [
+      "The rotation ranking measures reconciliation/deference behavior, not implementation correctness.",
       "Rotated reconciliation compares candidate plans, but it is still a heuristic and not a proof of correctness.",
       "A human must explicitly approve a reconciled candidate before implementation."
     ]

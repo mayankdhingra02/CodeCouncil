@@ -178,6 +178,7 @@ describe("reconcile CLI", () => {
           reconcilerPlanSelections: number;
           synthesisSelections: number;
         }>;
+        recommendationReason: string;
         recommendedReconcilerAgentId: string;
         strategy: string;
       };
@@ -195,6 +196,8 @@ describe("reconcile CLI", () => {
     expect(Object.keys(reconcilePayload.artifacts.candidates).sort()).toEqual(["mock-claude", "mock-codex"]);
     expect(reconcilePayload.rotationComparison.candidates).toHaveLength(2);
     expect(["mock-codex", "mock-claude"]).toContain(reconcilePayload.rotationComparison.recommendedReconcilerAgentId);
+    expect(reconcilePayload.rotationComparison.recommendationReason).toContain("most synthesis selections");
+    expect(reconcilePayload.rotationComparison.recommendationReason).toContain("not correctness");
 
     await expect(readFile(reconcilePayload.artifacts.candidates["mock-codex"]?.jsonPath ?? "", "utf8")).resolves.toContain(
       "\"rotationCandidate\": true"
@@ -204,6 +207,9 @@ describe("reconcile CLI", () => {
     );
     await expect(readFile(reconcilePayload.artifacts.comparison.markdownPath, "utf8")).resolves.toContain(
       "# Reconciliation Rotation Comparison"
+    );
+    await expect(readFile(reconcilePayload.artifacts.comparison.markdownPath, "utf8")).resolves.toContain(
+      "deference behavior"
     );
     await expect(readFile(reconcilePayload.artifacts.recommended.jsonPath, "utf8")).resolves.toContain(
       "\"canonicalFromRotation\": true"

@@ -58,9 +58,11 @@ recommended candidate to `plans/reconciled.json` for explicit approval:
 codecouncil reconcile --session <id> --strategy rotate
 ```
 
-The recommendation is deterministic: CodeCouncil favors fewer own-plan
-selections, fewer open questions, more synthesis selections, then higher
-confidence. This is a bias signal for human review, not an automatic decision.
+The recommendation is deterministic: CodeCouncil favors more synthesis
+selections, fewer own-plan selections, fewer open questions, then higher
+confidence. This ranking measures reconciliation/deference behavior, not
+correctness. Use it as a bias signal for human review, not as an automatic
+decision.
 
 ## Guided Solve
 
