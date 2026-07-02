@@ -1,6 +1,6 @@
 # CodeCouncil Demo Repo
 
-This is a tiny Node project for demoing CodeCouncil with mock agents.
+This is a tiny Node project for demoing CodeCouncil with mock or real agents.
 
 It has no dependencies. Run tests with:
 
@@ -22,3 +22,8 @@ Suggested task:
 ```text
 Add password complexity validation and tests for missing uppercase, lowercase, and number requirements.
 ```
+
+This folder includes a demo-local `codecouncil.config.json` that points at the
+real `codex` and `claude` CLIs. Those CLIs must already be installed and
+authenticated on your machine. CodeCouncil does not read token files or automate
+VS Code extensions.
