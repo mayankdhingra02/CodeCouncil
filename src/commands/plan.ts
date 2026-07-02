@@ -58,7 +58,10 @@ export function registerPlanCommand(program: Command): void {
       const config = applyModelSelectionToConfig(
         runtime.loadedConfig.config,
         modelSelection,
-        "plan"
+        {
+          stage: "plan",
+          targetAgentIds: selectedAgentIds
+        }
       );
       const planning = await runPlanningStage({
         agentIds: selectedAgentIds,

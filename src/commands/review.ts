@@ -122,20 +122,25 @@ export function registerReviewCommand(program: Command): void {
         model: options.model,
         models: options.models
       });
+      const reviewerAgentIds = [
+        ...(options.reviewer ?? []),
+        ...parseAgentsOption(options.reviewers)
+      ];
+      const targetAgentIds = [
+        ...(options.target ?? []),
+        ...parseAgentsOption(options.targets)
+      ];
       const config = applyModelSelectionToConfig(
         runtime.loadedConfig.config,
         modelSelection,
-        "review"
+        {
+          stage: "review",
+          targetAgentIds: reviewerAgentIds
+        }
       );
       const registry = AgentRegistry.fromConfig(config);
-      const reviewerAgents = selectAgents(config, [
-        ...(options.reviewer ?? []),
-        ...parseAgentsOption(options.reviewers)
-      ]);
-      const targetAgents = selectAgents(config, [
-        ...(options.target ?? []),
-        ...parseAgentsOption(options.targets)
-      ]);
+      const reviewerAgents = selectAgents(config, reviewerAgentIds);
+      const targetAgents = selectAgents(config, targetAgentIds);
       const pairs = createReviewPairs({
         reviewers: reviewerAgents.map((agent) => agent.id),
         selfReview: options.selfReview === true,

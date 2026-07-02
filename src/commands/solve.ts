@@ -108,7 +108,9 @@ export function registerSolveCommand(program: Command): void {
         model: options.model,
         models: options.models
       });
-      const config = applyModelSelectionToConfig(runtime.loadedConfig.config, modelSelection);
+      const config = applyModelSelectionToConfig(runtime.loadedConfig.config, modelSelection, {
+        targetAgentIds: selectedAgentIds
+      });
       const modelArgs = formatModelSelectionArgs(modelSelection);
       const deadlineMs = parseMaxDurationDeadline(options.maxDuration);
       const plannedStages = buildPlannedStages(options);

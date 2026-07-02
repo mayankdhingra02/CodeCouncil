@@ -397,7 +397,7 @@ function defaultAgentConfig(agentId: AgentId): AgentConfig {
       command: "codex",
       models: {},
       planArgs: ["exec", "--json"],
-      implementArgs: ["exec", "--json"],
+      implementArgs: ["exec", "--json", "--sandbox", "workspace-write"],
       reviewArgs: ["exec", "--json"],
       maxRuntimeSeconds: 900
     };
@@ -409,7 +409,7 @@ function defaultAgentConfig(agentId: AgentId): AgentConfig {
       command: "claude",
       models: {},
       planArgs: ["-p", "--output-format", "stream-json"],
-      implementArgs: ["-p", "--output-format", "stream-json"],
+      implementArgs: ["-p", "--output-format", "stream-json", "--permission-mode", "acceptEdits"],
       reviewArgs: ["-p", "--output-format", "stream-json"],
       maxRuntimeSeconds: 900
     };

@@ -92,6 +92,25 @@ describe("plan comparison and approval", () => {
     );
   });
 
+  it("does not report fake shared agreement for a single plan", () => {
+    const comparison = comparePlans([
+      makePlan("solo-agent", {
+        proposedFilesToChange: ["src/solo.ts"],
+        testsToRun: ["pnpm test"]
+      })
+    ]);
+
+    expect(comparison.files.shared).toEqual([]);
+    expect(comparison.testingStrategy.shared).toEqual([]);
+    expect(comparison.majorDisagreements).toEqual([]);
+    expect(comparison.agentAssessments[0]?.strengths.join("\n")).not.toContain(
+      "Aligns with another agent"
+    );
+    expect(comparison.planSynthesis.openQuestions).toContain(
+      "Only one plan is available; no cross-agent agreement can be established."
+    );
+  });
+
   it("creates approval files from an agent plan and manual approval", async () => {
     const rootDir = await makeTempDir();
     const config = createDefaultConfig({

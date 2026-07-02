@@ -88,6 +88,27 @@ describe("implementation phase", () => {
     });
   });
 
+  it("rejects the unimplemented from-plan option instead of silently ignoring it", async () => {
+    const repo = await createTempGitRepo();
+    const session = await createApprovedSession(repo, "Reject from-plan");
+
+    await expect(
+      runCli([
+        "--cwd",
+        repo,
+        "implement",
+        "--session",
+        session.id,
+        "--agents",
+        "mock-codex",
+        "--from-plan",
+        path.join(session.paths.plansDir, "mock-codex.json")
+      ])
+    ).rejects.toMatchObject({
+      code: "FROM_PLAN_NOT_IMPLEMENTED"
+    });
+  });
+
   it("blocks implementation results that touch secret files", async () => {
     const repo = await createTempGitRepo();
     const session = await createApprovedSession(repo, "Avoid secret changes");

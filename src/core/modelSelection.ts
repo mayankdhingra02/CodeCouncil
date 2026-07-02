@@ -118,16 +118,26 @@ export function parseModelSelection(input: {
 export function applyModelSelectionToConfig(
   config: CodeCouncilConfig,
   selection: ModelSelection,
-  stage?: AgentStage
+  options: {
+    stage?: AgentStage;
+    targetAgentIds?: readonly string[];
+  } = {}
 ): CodeCouncilConfig {
   if (!selection.defaultModel && Object.keys(selection.byAgent).length === 0) {
     return config;
   }
 
+  const targetAgentIds = resolveTargetAgentIds(config, options.targetAgentIds);
+  validateModelSelection(config, selection, targetAgentIds);
+
   const nextConfig: CodeCouncilConfig = {
     ...config,
     agents: Object.fromEntries(
       Object.entries(config.agents).map(([agentId, agentConfig]) => {
+        if (!targetAgentIds.includes(agentId)) {
+          return [agentId, agentConfig];
+        }
+
         const selectedModel = selection.byAgent[agentId] ?? selection.defaultModel;
 
         if (!selectedModel) {
@@ -136,13 +146,80 @@ export function applyModelSelectionToConfig(
 
         return [
           agentId,
-          applyModelToAgentConfig(agentConfig, selectedModel, stage)
+          applyModelToAgentConfig(agentConfig, selectedModel, options.stage)
         ];
       })
     )
   };
 
   return nextConfig;
+}
+
+function validateModelSelection(
+  config: CodeCouncilConfig,
+  selection: ModelSelection,
+  targetAgentIds: readonly string[]
+): void {
+  for (const agentId of Object.keys(selection.byAgent)) {
+    const configuredAgent = config.agents[agentId];
+
+    if (!configuredAgent) {
+      throw new CodeCouncilError(`Unknown model override agent "${agentId}". Check your config or --models option.`, {
+        code: "UNKNOWN_MODEL_AGENT",
+        exitCode: 2
+      });
+    }
+
+    if (!configuredAgent.enabled) {
+      throw new CodeCouncilError(`Model override agent "${agentId}" is disabled in the active config.`, {
+        code: "DISABLED_MODEL_AGENT",
+        exitCode: 2
+      });
+    }
+
+    if (!targetAgentIds.includes(agentId)) {
+      throw new CodeCouncilError(
+        `Model override for "${agentId}" does not match the selected agent set: ${targetAgentIds.join(", ")}.`,
+        {
+          code: "MODEL_AGENT_NOT_SELECTED",
+          exitCode: 2
+        }
+      );
+    }
+  }
+
+  if (selection.defaultModel && targetAgentIds.length !== 1) {
+    throw new CodeCouncilError(
+      "Bare --model/--models values are only allowed when exactly one agent is selected. Use agent=model form for multi-agent runs.",
+      {
+        code: "MODEL_SELECTION_REQUIRES_AGENT",
+        exitCode: 2
+      }
+    );
+  }
+}
+
+function resolveTargetAgentIds(
+  config: CodeCouncilConfig,
+  requestedAgentIds: readonly string[] | undefined
+): string[] {
+  const enabledAgentIds = Object.entries(config.agents)
+    .filter(([, agent]) => agent.enabled)
+    .map(([agentId]) => agentId);
+  const targetAgentIds = requestedAgentIds && requestedAgentIds.length > 0
+    ? [...new Set(requestedAgentIds)]
+    : enabledAgentIds;
+
+  for (const agentId of targetAgentIds) {
+    if (!config.agents[agentId]) {
+      throw new CodeCouncilError(`Unknown agent "${agentId}". Check your config or --agent option.`, {
+        code: "UNKNOWN_AGENT",
+        exitCode: 2
+      });
+    }
+  }
+
+  return targetAgentIds;
 }
 
 export function formatModelSelectionArgs(selection: ModelSelection): string[] {

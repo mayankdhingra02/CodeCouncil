@@ -11,8 +11,21 @@ The safety model is defense-in-depth: reduce accidental damage, preserve evidenc
 - Do not automate VS Code extensions.
 - Do not scrape UI.
 - Run official CLIs through child processes.
-- Keep implementations in isolated git worktrees.
+- Keep implementations in separate git worktrees for diff scoping and review.
 - Never merge, push, publish, or apply changes automatically.
+
+## Worktree Isolation Limits
+
+CodeCouncil worktrees are not OS sandboxes. They scope the intended change surface and make diffs reviewable, but the real agent CLI still runs as the local user process.
+
+That means a malicious or prompt-injected agent could try to write outside its worktree unless the provider CLI, operating system, container, or another sandbox prevents it.
+
+CodeCouncil treats worktrees as the organization and audit layer. Enforcement should come from:
+
+- Codex CLI sandbox settings such as `--sandbox read-only` for planning and `--sandbox workspace-write` for implementation.
+- Claude Code permission settings such as plan mode for planning and explicit edit permissions for implementation.
+- External containers or VMs for untrusted repositories or high-risk tasks.
+- Human inspection of the original working tree before applying changes.
 
 ## Sensitive Files
 
@@ -43,6 +56,8 @@ For v0.1, CodeCouncil itself runs:
 - configured agent CLI commands
 
 Test commands are parsed into argv and executed without shell interpolation. CodeCouncil rejects compound shell syntax such as pipes and `&&`.
+
+This is not a sandbox. Test commands run agent-authored code from the implementation worktree on the host. Treat this as trusted-code execution unless you run CodeCouncil inside a container or VM.
 
 Saved artifacts are scanned for suspicious command text such as:
 
@@ -81,6 +96,8 @@ Artifacts:
 ## Current Limits
 
 - No container sandbox is enabled by default.
+- Git worktrees are not a security boundary.
+- Test execution can run agent-authored code on the host.
 - Real agents can still propose bad code.
 - Real agent CLIs may have their own behavior outside CodeCouncil's control.
 - Redaction catches common secret shapes, not every possible secret.

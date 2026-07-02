@@ -64,14 +64,25 @@ export function registerImplementCommand(program: Command): void {
       async (taskWords: string[] | undefined, options: ImplementOptions, command: Command) => {
         const taskOverride = joinTaskWords(taskWords);
 
-        if (!taskOverride && !options.fromPlan && !options.session) {
-          throw new CodeCouncilError("Provide a task description, --from-plan, or --session.", {
+        if (!taskOverride && !options.session) {
+          throw new CodeCouncilError("Provide a task description or --session.", {
             code: "MISSING_IMPLEMENT_INPUT",
             exitCode: 2
           });
         }
 
+        if (options.fromPlan) {
+          throw new CodeCouncilError("--from-plan is not implemented yet. Use --session with an approved plan.", {
+            code: "FROM_PLAN_NOT_IMPLEMENTED",
+            exitCode: 2
+          });
+        }
+
         const runtime = await loadRuntimeContext(command);
+        const selectedAgentIds = [
+          ...(options.agent ?? []),
+          ...parseAgentsOption(options.agents)
+        ];
         const modelSelection = parseModelSelection({
           model: options.model,
           models: options.models
@@ -79,7 +90,10 @@ export function registerImplementCommand(program: Command): void {
         const config = applyModelSelectionToConfig(
           runtime.loadedConfig.config,
           modelSelection,
-          "implement"
+          {
+            stage: "implement",
+            targetAgentIds: selectedAgentIds
+          }
         );
 
         if (!options.session) {
@@ -107,10 +121,7 @@ export function registerImplementCommand(program: Command): void {
         }
 
         const registry = AgentRegistry.fromConfig(config);
-        const selectedAgents = registry.select([
-          ...(options.agent ?? []),
-          ...parseAgentsOption(options.agents)
-        ]);
+        const selectedAgents = registry.select(selectedAgentIds);
         const git = new GitManager(runtime.loadedConfig.rootDir);
         const repoStatus = await git.getRepositoryStatus();
 
@@ -301,6 +312,17 @@ async function implementWithAgent(input: {
     ignoreMatcher: input.ignoreMatcher,
     secretPatterns: input.config.safety.secretPatterns
   });
+
+  if (status === "success" && changedFiles.length === 0) {
+    status = "failed";
+    safety.warnings.push("Implementation command completed but produced no changed files.");
+    output = {
+      ...output,
+      error: output.error ?? "Implementation command completed but produced no changed files.",
+      status: "failed",
+      summary: output.summary || "Implementation command completed but produced no changed files."
+    };
+  }
 
   if (safety.blockedFiles.length > 0) {
     status = "blocked";

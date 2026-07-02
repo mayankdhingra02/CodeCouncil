@@ -247,37 +247,40 @@ export function comparePlans(plans: readonly PlanOutput[]): PlanComparison {
     stepComparison,
     testComparison
   });
+  const hasMultiplePlans = plans.length > 1;
   const majorAgreements = [
     plans.length > 1 ? "All selected agents produced structured plans." : "One structured plan is available.",
-    sharedFiles.length > 0 ? `Shared file/area focus: ${sharedFiles.join(", ")}.` : "",
-    sharedTests.length > 0 ? `Shared testing strategy: ${sharedTests.join(", ")}.` : "",
-    riskComparison.shared.length > 0 ? `Shared risk focus: ${riskComparison.shared.join(", ")}.` : "",
-    stepComparison.shared.length > 0 ? `Shared implementation step: ${stepComparison.shared.join(", ")}.` : "",
+    hasMultiplePlans && sharedFiles.length > 0 ? `Shared file/area focus: ${sharedFiles.join(", ")}.` : "",
+    hasMultiplePlans && sharedTests.length > 0 ? `Shared testing strategy: ${sharedTests.join(", ")}.` : "",
+    hasMultiplePlans && riskComparison.shared.length > 0 ? `Shared risk focus: ${riskComparison.shared.join(", ")}.` : "",
+    hasMultiplePlans && stepComparison.shared.length > 0 ? `Shared implementation step: ${stepComparison.shared.join(", ")}.` : "",
     consensusComplexity ? `All agents estimate ${consensusComplexity} complexity.` : ""
   ].filter(Boolean);
-  const majorDisagreements = [
-    ...Object.entries(uniqueFilesByAgent).flatMap(([agentId, files]) =>
-      files.length > 0 ? [`${agentId} uniquely proposes: ${files.join(", ")}.`] : []
-    ),
-    ...Object.entries(uniqueTestsByAgent).flatMap(([agentId, tests]) =>
-      tests.length > 0 ? [`${agentId} uniquely suggests tests: ${tests.join(", ")}.`] : []
-    ),
-    ...Object.entries(riskComparison.uniqueByAgent).flatMap(([agentId, risks]) =>
-      risks.length > 0 ? [`${agentId} uniquely identifies risks: ${risks.join(", ")}.`] : []
-    ),
-    ...Object.entries(stepComparison.uniqueByAgent).flatMap(([agentId, steps]) =>
-      steps.length > 0 ? [`${agentId} uniquely proposes steps: ${steps.join(", ")}.`] : []
-    ),
-    consensusComplexity ? "" : `Complexity differs: ${formatRecord(complexityByAgent)}.`,
-    `Confidence differs: ${formatRecord(
-      Object.fromEntries(
-        Object.entries(confidenceByAgent).map(([agentId, confidence]) => [
-          agentId,
-          `${Math.round(confidence * 100)}%`
-        ])
-      )
-    )}.`
-  ].filter(Boolean);
+  const majorDisagreements = hasMultiplePlans
+    ? [
+        ...Object.entries(uniqueFilesByAgent).flatMap(([agentId, files]) =>
+          files.length > 0 ? [`${agentId} uniquely proposes: ${files.join(", ")}.`] : []
+        ),
+        ...Object.entries(uniqueTestsByAgent).flatMap(([agentId, tests]) =>
+          tests.length > 0 ? [`${agentId} uniquely suggests tests: ${tests.join(", ")}.`] : []
+        ),
+        ...Object.entries(riskComparison.uniqueByAgent).flatMap(([agentId, risks]) =>
+          risks.length > 0 ? [`${agentId} uniquely identifies risks: ${risks.join(", ")}.`] : []
+        ),
+        ...Object.entries(stepComparison.uniqueByAgent).flatMap(([agentId, steps]) =>
+          steps.length > 0 ? [`${agentId} uniquely proposes steps: ${steps.join(", ")}.`] : []
+        ),
+        consensusComplexity ? "" : `Complexity differs: ${formatRecord(complexityByAgent)}.`,
+        `Confidence differs: ${formatRecord(
+          Object.fromEntries(
+            Object.entries(confidenceByAgent).map(([agentId, confidence]) => [
+              agentId,
+              `${Math.round(confidence * 100)}%`
+            ])
+          )
+        )}.`
+      ].filter(Boolean)
+    : [];
   const suggestedImplementationAgent = chooseSuggestedAgent(agentAssessments);
   const recommendationReasons = buildRecommendationReasons(
     suggestedImplementationAgent,
@@ -762,11 +765,12 @@ function buildPlanSynthesis(input: {
   stepComparison: { shared: string[]; uniqueByAgent: Record<string, string[]> };
   testComparison: { shared: string[]; uniqueByAgent: Record<string, string[]> };
 }): PlanComparison["planSynthesis"] {
+  const hasMultiplePlans = input.plans.length > 1;
   const commonCore = [
-    ...input.fileComparison.shared.map((item) => `Change or inspect ${item}.`),
-    ...input.stepComparison.shared.map((item) => `Include shared step: ${item}.`),
-    ...input.testComparison.shared.map((item) => `Validate with ${item}.`),
-    ...input.riskComparison.shared.map((item) => `Track shared risk: ${item}.`)
+    ...(hasMultiplePlans ? input.fileComparison.shared.map((item) => `Change or inspect ${item}.`) : []),
+    ...(hasMultiplePlans ? input.stepComparison.shared.map((item) => `Include shared step: ${item}.`) : []),
+    ...(hasMultiplePlans ? input.testComparison.shared.map((item) => `Validate with ${item}.`) : []),
+    ...(hasMultiplePlans ? input.riskComparison.shared.map((item) => `Track shared risk: ${item}.`) : [])
   ];
   const uniqueContributionsByAgent = Object.fromEntries(
     input.plans.map((plan) => {
@@ -787,8 +791,9 @@ function buildPlanSynthesis(input: {
     })
   );
   const openQuestions = [
-    input.fileComparison.shared.length === 0 ? "Agents do not agree on the files or areas to change." : "",
-    input.testComparison.shared.length === 0 ? "Agents do not share a validation command." : "",
+    !hasMultiplePlans ? "Only one plan is available; no cross-agent agreement can be established." : "",
+    hasMultiplePlans && input.fileComparison.shared.length === 0 ? "Agents do not agree on the files or areas to change." : "",
+    hasMultiplePlans && input.testComparison.shared.length === 0 ? "Agents do not share a validation command." : "",
     input.securityConsiderations.length === 0 ? "Neither plan called out explicit security considerations." : "",
     input.plans.some((plan) => plan.estimatedComplexity === "high")
       ? "At least one plan estimates high complexity; consider narrowing the first pass."
@@ -887,9 +892,11 @@ function compareItemsByAgent<TPlan extends { agentId: string }>(
     }
   }
 
-  const shared = [...byKey.values()]
-    .filter((item) => item.agents.size === plans.length)
-    .map((item) => item.display);
+  const shared = plans.length > 1
+    ? [...byKey.values()]
+        .filter((item) => item.agents.size === plans.length)
+        .map((item) => item.display)
+    : [];
 
   const uniqueByAgent = Object.fromEntries(
     plans.map((plan) => {

@@ -73,7 +73,7 @@ CodeCouncil calls configured commands through child processes. It does not read 
         "review": "gpt-5.5"
       },
       "planArgs": ["exec", "--json"],
-      "implementArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
       "reviewArgs": ["exec", "--json"],
       "maxRuntimeSeconds": 900
     },
@@ -86,7 +86,7 @@ CodeCouncil calls configured commands through child processes. It does not read 
         "review": "opus"
       },
       "planArgs": ["-p", "--output-format", "stream-json"],
-      "implementArgs": ["-p", "--output-format", "stream-json"],
+      "implementArgs": ["-p", "--output-format", "stream-json", "--permission-mode", "acceptEdits"],
       "reviewArgs": ["-p", "--output-format", "stream-json"],
       "maxRuntimeSeconds": 900
     }

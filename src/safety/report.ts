@@ -44,6 +44,8 @@ export async function generateSafetySummary(options: {
     .filter((classification) => classification.blocked || classification.ignored || classification.suspicious);
   const riskyCommands = await scanSessionArtifactsForRiskyCommands(options.session);
   const warnings = [
+    "Git worktrees scope intended diffs, but they are not OS sandboxes and do not prevent an agent CLI from accessing other user-writable paths.",
+    "Configured test commands execute code from agent worktrees on the host; use external sandboxing or containers for untrusted code.",
     ...safety.warnings,
     ...sensitiveFilesTouched
       .filter((classification) => classification.blocked && !classification.ignored)
@@ -215,7 +217,9 @@ function buildManualChecks(
   const checks = [
     "Inspect implementation worktrees before applying any changes.",
     "Run tests from a clean shell before merging.",
-    "Review diffs for unexpected file changes and generated code."
+    "Review diffs for unexpected file changes and generated code.",
+    "Check the original working tree for unexpected modifications after real-agent implementation.",
+    "Use provider CLI sandbox/permission settings or containers when running untrusted agent output."
   ];
 
   if (sensitiveFiles.length > 0) {

@@ -12,7 +12,7 @@
         "review": "gpt-5.5"
       },
       "planArgs": ["exec", "--json", "--sandbox", "read-only"],
-      "implementArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json", "--sandbox", "workspace-write"],
       "reviewArgs": ["exec", "--json", "--sandbox", "read-only"],
       "maxRuntimeSeconds": 900
     },
@@ -25,7 +25,7 @@
         "review": "opus"
       },
       "planArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
-      "implementArgs": ["-p", "--verbose", "--output-format", "stream-json"],
+      "implementArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "acceptEdits"],
       "reviewArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
       "maxRuntimeSeconds": 900
     }
