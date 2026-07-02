@@ -12,7 +12,7 @@ import {
   type ReconciliationPlanInput
 } from "../agents/index.js";
 import type { AgentId, CodeCouncilConfig } from "../config/schema.js";
-import { CodeCouncilError } from "../core/errors.js";
+import { CodeCouncilError, isErrnoException } from "../core/errors.js";
 import {
   applyModelSelectionToConfig,
   parseModelSelection,
@@ -81,7 +81,7 @@ export function registerReconcileCommand(program: Command): void {
       const reconciler = registry.get(reconcilerAgentId);
       const planInputs = createAnonymizedPlanInputs(plans);
       const planAliases = Object.fromEntries(planInputs.map(({ alias, plan }) => [alias, plan.agentId]));
-      const anonymizedComparison = anonymizeValue(
+      const anonymizedComparison = anonymizeReconciliationInputValue(
         comparison,
         Object.fromEntries(planInputs.map(({ alias, plan }) => [plan.agentId, alias]))
       );
@@ -117,7 +117,7 @@ export function registerReconcileCommand(program: Command): void {
         );
       }
 
-      let reconciliation = await reconciler.reconcilePlans({
+      const rawReconciliation = await reconciler.reconcilePlans({
         comparison: anonymizedComparison,
         config,
         plans: planInputs,
@@ -125,6 +125,7 @@ export function registerReconcileCommand(program: Command): void {
         session,
         task: session.task
       });
+      let reconciliation = deAnonymizeReconciliationOutput(rawReconciliation, planAliases);
       reconciliation = reconciliationOutputSchema.parse({
         ...reconciliation,
         metadata: {
@@ -206,15 +207,22 @@ async function loadPlanArtifacts(session: TaskSession): Promise<PlanOutput[]> {
 
 async function loadComparisonArtifact(session: TaskSession): Promise<PlanComparison> {
   const comparisonPath = path.join(session.paths.plansDir, "comparison.json");
+  let source: string;
 
   try {
-    return JSON.parse(await readFile(comparisonPath, "utf8")) as PlanComparison;
-  } catch {
+    source = await readFile(comparisonPath, "utf8");
+  } catch (error) {
+    if (!isErrnoException(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+
     throw new CodeCouncilError("No deterministic comparison exists for this session. Run codecouncil plan first.", {
       code: "COMPARISON_NOT_FOUND",
       exitCode: 2
     });
   }
+
+  return JSON.parse(source) as PlanComparison;
 }
 
 function resolveReconcilerId(
@@ -250,20 +258,23 @@ function createAnonymizedPlanInputs(plans: readonly PlanOutput[]): Reconciliatio
   }));
 }
 
-function anonymizeValue(value: unknown, aliasByAgentId: Record<string, string>): unknown {
+export function anonymizeReconciliationInputValue(
+  value: unknown,
+  aliasByAgentId: Record<string, string>
+): unknown {
   if (typeof value === "string") {
     return replaceAgentIds(value, aliasByAgentId);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => anonymizeValue(item, aliasByAgentId));
+    return value.map((item) => anonymizeReconciliationInputValue(item, aliasByAgentId));
   }
 
   if (isRecord(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, nestedValue]) => [
         replaceAgentIds(key, aliasByAgentId),
-        anonymizeValue(nestedValue, aliasByAgentId)
+        anonymizeReconciliationInputValue(nestedValue, aliasByAgentId)
       ])
     );
   }
@@ -272,10 +283,81 @@ function anonymizeValue(value: unknown, aliasByAgentId: Record<string, string>):
 }
 
 function replaceAgentIds(value: string, aliasByAgentId: Record<string, string>): string {
-  return Object.entries(aliasByAgentId).reduce(
-    (current, [agentId, alias]) => current.replaceAll(agentId, alias),
-    value
-  );
+  return Object.entries(aliasByAgentId).reduce((current, [agentId, alias]) => {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9._/-])(${escapeRegExp(agentId)})(?=$|[^A-Za-z0-9._/-])`, "giu");
+
+    return current.replace(pattern, (match, prefix: string, _matchedAgentId: string, offset: number, source: string) => {
+      const afterMatch = source.slice(offset + match.length);
+
+      if (/^\s+(?:-|exec|init|plan|reconcile|approve|implement|test|review|report|safety|solve|benchmark|doctor|models|sessions|worktree)\b/iu.test(afterMatch)) {
+        return match;
+      }
+
+      return `${prefix}${alias}`;
+    });
+  }, value);
+}
+
+export function deAnonymizeReconciliationOutput(
+  reconciliation: ReconciliationOutput,
+  agentIdByAlias: Record<string, string>
+): ReconciliationOutput {
+  const deAnonymized = deAnonymizeAliasesInValue(reconciliation, agentIdByAlias) as ReconciliationOutput;
+
+  return reconciliationOutputSchema.parse({
+    ...deAnonymized,
+    resolutions: deAnonymized.resolutions.map((resolution) => ({
+      ...resolution,
+      chosenAgentId: deAnonymizeAgentReference(resolution.chosenAgentId, agentIdByAlias)
+    })),
+    rejectedIdeas: deAnonymized.rejectedIdeas.map((idea) => ({
+      ...idea,
+      agentId: deAnonymizeAgentReference(idea.agentId, agentIdByAlias)
+    }))
+  });
+}
+
+function deAnonymizeAliasesInValue(value: unknown, agentIdByAlias: Record<string, string>): unknown {
+  if (typeof value === "string") {
+    return replaceAliases(value, agentIdByAlias);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => deAnonymizeAliasesInValue(item, agentIdByAlias));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        replaceAliases(key, agentIdByAlias),
+        deAnonymizeAliasesInValue(nestedValue, agentIdByAlias)
+      ])
+    );
+  }
+
+  return value;
+}
+
+function deAnonymizeAgentReference(value: string, agentIdByAlias: Record<string, string>): string {
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (normalizedValue === "synthesis") {
+    return "synthesis";
+  }
+
+  const match = Object.entries(agentIdByAlias).find(([alias]) => alias.toLowerCase() === normalizedValue);
+  return match?.[1] ?? value;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function replaceAliases(value: string, agentIdByAlias: Record<string, string>): string {
+  return Object.entries(agentIdByAlias).reduce((current, [alias, agentId]) => {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9._/-])(${escapeRegExp(alias)})(?=$|[^A-Za-z0-9._/-])`, "giu");
+    return current.replace(pattern, (_match, prefix: string) => `${prefix}${agentId}`);
+  }, value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

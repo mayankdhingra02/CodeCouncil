@@ -176,7 +176,15 @@ export class MockAgent implements CodeCouncilAgent {
                 evidence: files.slice(0, 2)
               }
             ],
-      rejectedIdeas: [],
+      rejectedIdeas: firstPlan
+        ? [
+            {
+              agentId: firstPlan.alias,
+              item: "Treat the first mock plan as automatically final without human approval.",
+              why: "Reconciliation should remain a candidate plan until the user approves it."
+            }
+          ]
+        : [],
       openQuestionsForHuman: files.length === 0 ? ["Which concrete files should be inspected before approval?"] : [],
       confidence: 0.76,
       metadata: {

@@ -223,7 +223,7 @@ function renderReconciledApprovalMarkdown(
     "## Reconciliation Notes",
     "",
     ...reconciliation.resolutions.map(
-      (resolution) => `- ${resolution.disagreement}: ${resolution.rationale}`
+      (resolution) => `- ${resolution.disagreement}: chose \`${resolution.chosenAgentId}\` - ${resolution.rationale}`
     ),
     "",
     "This approved plan was copied from the reconciled candidate plan. Edit this file before implementation if you want to refine it.",
