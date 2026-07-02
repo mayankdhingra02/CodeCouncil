@@ -5,6 +5,26 @@ Reconciler: `codex` (OpenAI Codex CLI)
 Generated: 2026-07-02T04:12:46.905Z
 Confidence: 88%
 
+## Bias Disclosure
+
+Warning: The reconciler also produced one of the source plans, so this
+reconciliation may contain model self-preference bias.
+
+## Bias Metrics
+
+- Reconciler: `codex`
+- Reconciler was also planner: yes
+- Total disagreements resolved: 5
+- Reconciler-plan selections: 0
+- Other-planner selections: 1
+- Synthesis selections: 4
+- Unknown selections: 0
+
+| Source Plan Agent | Selections |
+| --- | ---: |
+| `claude` | 1 |
+| `codex` | 0 |
+
 ## Summary
 
 Add independent password complexity checks to signup validation and targeted

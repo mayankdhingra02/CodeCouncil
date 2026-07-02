@@ -18,6 +18,10 @@ import {
   parseModelSelection,
   type ModelSelection
 } from "../core/modelSelection.js";
+import {
+  readReconcilerBiasMetrics,
+  summarizeReconcilerBias
+} from "../reconcile/biasMetrics.js";
 import { saveReconciliationArtifacts } from "../reconcile/index.js";
 import {
   appendSessionEvent,
@@ -128,6 +132,12 @@ export function registerReconcileCommand(program: Command): void {
       let reconciliation = deAnonymizeReconciliationOutput(rawReconciliation, planAliases);
       const sourcePlanAgentIds = plans.map((plan) => plan.agentId);
       const reconcilerWasAlsoPlanner = sourcePlanAgentIds.includes(reconciler.id);
+      const reconcilerBiasMetrics = summarizeReconcilerBias({
+        reconciliation,
+        reconcilerAgentId: reconciler.id,
+        reconcilerWasAlsoPlanner,
+        sourcePlanAgentIds
+      });
       const reconcilerBiasMetadata = reconcilerWasAlsoPlanner
         ? {
           reconcilerBiasWarning: "The reconciler also produced one of the source plans, so this reconciliation may contain model self-preference bias."
@@ -141,6 +151,7 @@ export function registerReconcileCommand(program: Command): void {
           deterministicBaseline: true,
           planAliases,
           ...reconcilerBiasMetadata,
+          reconcilerBiasMetrics,
           reconcilerWasAlsoPlanner,
           sourcePlanAgentIds,
           sourcePlanCount: plans.length
@@ -427,12 +438,23 @@ function formatModelSelectionLines(selection: ModelSelection): string[] {
 }
 
 function formatBiasWarningLines(reconciliation: ReconciliationOutput): string[] {
-  if (reconciliation.metadata["reconcilerWasAlsoPlanner"] !== true) {
+  const metrics = readReconcilerBiasMetrics(reconciliation.metadata["reconcilerBiasMetrics"]);
+
+  if (reconciliation.metadata["reconcilerWasAlsoPlanner"] !== true && !metrics) {
     return [];
   }
 
-  return [
-    "Bias note: reconciler also produced one source plan; inspect the reconciled plan for possible self-preference.",
-    ""
-  ];
+  const lines = [];
+
+  if (reconciliation.metadata["reconcilerWasAlsoPlanner"] === true) {
+    lines.push("Bias note: reconciler also produced one source plan; inspect the reconciled plan for possible self-preference.");
+  }
+
+  if (metrics) {
+    lines.push(
+      `Bias metrics: reconciler=${metrics.reconcilerPlanSelections}, other=${metrics.otherPlannerSelections}, synthesis=${metrics.synthesisSelections}, unknown=${metrics.unknownSelections}.`
+    );
+  }
+
+  return [...lines, ""];
 }

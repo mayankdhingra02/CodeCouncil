@@ -49,6 +49,14 @@ describe("reconcile CLI", () => {
         };
         metadata: {
           planAliases?: Record<string, string>;
+          reconcilerBiasMetrics?: {
+            otherPlannerSelections: number;
+            reconcilerPlanSelections: number;
+            selectionsByAgentId: Record<string, number>;
+            synthesisSelections: number;
+            totalResolutions: number;
+            unknownSelections: number;
+          };
           reconcilerBiasWarning?: string;
           reconcilerWasAlsoPlanner?: boolean;
           sourcePlanAgentIds?: string[];
@@ -75,6 +83,20 @@ describe("reconcile CLI", () => {
       expect.arrayContaining(["mock-codex", "mock-claude"])
     );
     expect(reconcilePayload.reconciliation.metadata.reconcilerBiasWarning).toContain("self-preference bias");
+    const biasMetrics = reconcilePayload.reconciliation.metadata.reconcilerBiasMetrics;
+    expect(biasMetrics).toMatchObject({
+      selectionsByAgentId: {
+        "mock-claude": expect.any(Number),
+        "mock-codex": expect.any(Number)
+      },
+      totalResolutions: reconcilePayload.reconciliation.resolutions.length
+    });
+    expect(
+      (biasMetrics?.reconcilerPlanSelections ?? 0) +
+      (biasMetrics?.otherPlannerSelections ?? 0) +
+      (biasMetrics?.synthesisSelections ?? 0) +
+      (biasMetrics?.unknownSelections ?? 0)
+    ).toBe(reconcilePayload.reconciliation.resolutions.length);
     expect(reconcilePayload.reconciliation.resolutions.map((resolution) => resolution.chosenAgentId)).not.toContain("agent-a");
     expect(reconcilePayload.reconciliation.rejectedIdeas.map((idea) => idea.agentId)).not.toContain("agent-a");
     expect(reconcilePayload.reconciliation.rejectedIdeas.map((idea) => idea.agentId)).toEqual(
@@ -86,6 +108,9 @@ describe("reconcile CLI", () => {
     );
     await expect(readFile(reconcilePayload.artifacts.markdownPath, "utf8")).resolves.toContain(
       "## Bias Disclosure"
+    );
+    await expect(readFile(reconcilePayload.artifacts.markdownPath, "utf8")).resolves.toContain(
+      "## Bias Metrics"
     );
 
     await runCli([

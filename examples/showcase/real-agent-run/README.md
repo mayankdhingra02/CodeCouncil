@@ -51,7 +51,7 @@ Final recommendation: inspect Claude's worktree first.
 ## Artifacts
 
 - `comparison.md`: deterministic local comparison of the two plans.
-- `reconciled-plan.md`: Codex-synthesized plan after reading both plans and the comparison.
+- `reconciled-plan.md`: Codex-synthesized plan after reading both plans and the comparison, including reconciler bias disclosure and selection counts.
 - `reviews/`: cross-agent review summaries.
 - `patches/`: the two generated patches.
 - `final-report.md`: sanitized final recommendation.

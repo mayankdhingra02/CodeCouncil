@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { ReconciliationOutput } from "../agents/index.js";
 import type { TaskSession } from "../session/index.js";
+import { readReconcilerBiasMetrics } from "./biasMetrics.js";
 
 export interface SavedReconciliationArtifact {
   jsonPath: string;
@@ -78,6 +79,7 @@ export function renderReconciliationMarkdown(
     `Confidence: ${Math.round(reconciliation.confidence * 100)}%`,
     "",
     renderBiasWarning(reconciliation),
+    renderBiasMetrics(reconciliation.metadata["reconcilerBiasMetrics"]),
     renderAliasMap(reconciliation.metadata["planAliases"]),
     "## Summary",
     "",
@@ -117,6 +119,31 @@ function renderBiasWarning(reconciliation: ReconciliationOutput): string {
     "## Bias Disclosure",
     "",
     `Warning: ${warning}`,
+    ""
+  ].join("\n");
+}
+
+function renderBiasMetrics(value: unknown): string {
+  const metrics = readReconcilerBiasMetrics(value);
+
+  if (!metrics) {
+    return "";
+  }
+
+  return [
+    "## Bias Metrics",
+    "",
+    `- Reconciler: \`${metrics.reconcilerAgentId}\``,
+    `- Reconciler was also planner: ${metrics.reconcilerWasAlsoPlanner ? "yes" : "no"}`,
+    `- Total disagreements resolved: ${metrics.totalResolutions}`,
+    `- Reconciler-plan selections: ${metrics.reconcilerPlanSelections}`,
+    `- Other-planner selections: ${metrics.otherPlannerSelections}`,
+    `- Synthesis selections: ${metrics.synthesisSelections}`,
+    `- Unknown selections: ${metrics.unknownSelections}`,
+    "",
+    "| Source Plan Agent | Selections |",
+    "| --- | ---: |",
+    ...metrics.sourcePlanAgentIds.map((agentId) => `| \`${agentId}\` | ${metrics.selectionsByAgentId[agentId] ?? 0} |`),
     ""
   ].join("\n");
 }
