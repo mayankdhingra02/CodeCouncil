@@ -163,45 +163,165 @@ function toCommandMetadata(result: AgentCommandResult) {
 }
 
 function findPlanCandidate(value: unknown): Record<string, unknown> | undefined {
-  const candidate = findObjectCandidate(value);
-
-  if (!candidate) {
-    return undefined;
-  }
-
-  if ("summary" in candidate || "stepByStepPlan" in candidate) {
-    return candidate;
-  }
-
-  return undefined;
+  return selectBestCandidate(value, scorePlanCandidate, 4);
 }
 
 function findObjectCandidate(value: unknown): Record<string, unknown> | undefined {
-  if (isRecord(value)) {
-    if (typeof value["summary"] === "string") {
-      return value;
+  return selectBestCandidate(value, scoreGenericCandidate, 2);
+}
+
+function selectBestCandidate(
+  value: unknown,
+  scoreCandidate: (candidate: Record<string, unknown>) => number,
+  minimumScore: number
+): Record<string, unknown> | undefined {
+  let best: { candidate: Record<string, unknown>; index: number; score: number } | undefined;
+  const candidates = collectObjectCandidates(value);
+
+  candidates.forEach((candidate, index) => {
+    const score = scoreCandidate(candidate);
+
+    if (score < minimumScore) {
+      return;
     }
 
-    for (const nestedValue of Object.values(value)) {
-      const nested = findObjectCandidate(nestedValue);
-
-      if (nested) {
-        return nested;
-      }
+    if (!best || score > best.score || (score === best.score && index > best.index)) {
+      best = { candidate, index, score };
     }
+  });
+
+  return best?.candidate;
+}
+
+function collectObjectCandidates(
+  value: unknown,
+  candidates: Record<string, unknown>[] = [],
+  seen: Set<unknown> = new Set(),
+  depth = 0
+): Record<string, unknown>[] {
+  if (depth > 24 || seen.has(value)) {
+    return candidates;
+  }
+
+  if (typeof value === "string") {
+    for (const parsed of parseEmbeddedJsonCandidates(value)) {
+      collectObjectCandidates(parsed, candidates, seen, depth + 1);
+    }
+
+    return candidates;
   }
 
   if (Array.isArray(value)) {
-    for (const item of value) {
-      const nested = findObjectCandidate(item);
+    seen.add(value);
 
-      if (nested) {
-        return nested;
-      }
+    for (const item of value) {
+      collectObjectCandidates(item, candidates, seen, depth + 1);
+    }
+
+    return candidates;
+  }
+
+  if (isRecord(value)) {
+    seen.add(value);
+    candidates.push(value);
+
+    for (const nestedValue of Object.values(value)) {
+      collectObjectCandidates(nestedValue, candidates, seen, depth + 1);
     }
   }
 
-  return undefined;
+  return candidates;
+}
+
+function parseEmbeddedJsonCandidates(value: string): unknown[] {
+  const trimmed = value.trim();
+
+  if (!trimmed.includes("{") && !trimmed.includes("[") && !trimmed.includes("```")) {
+    return [];
+  }
+
+  const candidates: unknown[] = [];
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    const direct = tryParseJson(trimmed);
+
+    if (direct !== undefined) {
+      candidates.push(direct);
+    }
+  }
+
+  const fencedJson = /```(?:json)?\s*([\s\S]*?)```/giu;
+
+  for (const match of trimmed.matchAll(fencedJson)) {
+    const [, source] = match;
+
+    if (!source) {
+      continue;
+    }
+
+    const parsed = tryParseJson(source.trim());
+
+    if (parsed !== undefined) {
+      candidates.push(parsed);
+    }
+  }
+
+  return candidates;
+}
+
+function scorePlanCandidate(candidate: Record<string, unknown>): number {
+  let score = 0;
+
+  if (typeof candidate["summary"] === "string") {
+    score += 2;
+  }
+
+  for (const key of [
+    "assumptions",
+    "proposedFilesToChange",
+    "stepByStepPlan",
+    "risks",
+    "testsToRun"
+  ]) {
+    if (Array.isArray(candidate[key])) {
+      score += 2;
+    }
+  }
+
+  if (typeof candidate["estimatedComplexity"] === "string") {
+    score += 1;
+  }
+
+  if (typeof candidate["confidence"] === "number") {
+    score += 1;
+  }
+
+  return score;
+}
+
+function scoreGenericCandidate(candidate: Record<string, unknown>): number {
+  let score = 0;
+
+  if (typeof candidate["summary"] === "string") {
+    score += 2;
+  }
+
+  for (const key of [
+    "blockingIssues",
+    "createdFiles",
+    "filesChanged",
+    "nonBlockingIssues",
+    "recommendation",
+    "securityConcerns",
+    "suggestedFixes",
+    "verdict"
+  ]) {
+    if (typeof candidate[key] === "string" || Array.isArray(candidate[key])) {
+      score += 2;
+    }
+  }
+
+  return score;
 }
 
 function tryParseJson(value: string): unknown | undefined {
