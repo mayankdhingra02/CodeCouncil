@@ -43,6 +43,13 @@ describe("plan comparison and approval", () => {
     });
     expect(comparison.agentAssessments).toHaveLength(2);
     expect(comparison.recommendationReasons.join("\n")).toContain("local rules score");
+    expect(comparison.agentAssessments[0]?.rubricChecks.map((check) => check.id)).toContain(
+      "validation"
+    );
+    expect(comparison.planSynthesis.commonCore).toContain("Change or inspect src/auth.ts.");
+    expect(comparison.planSynthesis.uniqueContributionsByAgent["mock-claude"]?.join("\n")).toContain(
+      "Unique file/area: src/email.ts."
+    );
   });
 
   it("normalizes described file paths and does not let confidence alone win", () => {
@@ -76,6 +83,12 @@ describe("plan comparison and approval", () => {
     );
     expect(comparison.recommendationReasons.join("\n")).toContain(
       "only 5% self-reported confidence"
+    );
+    expect(comparison.agentAssessments.find((assessment) => assessment.agentId === "lower-confidence-complete")?.rubricScore).toBeGreaterThan(
+      comparison.agentAssessments.find((assessment) => assessment.agentId === "high-confidence-thin")?.rubricScore ?? 0
+    );
+    expect(comparison.planSynthesis.openQuestions).toContain(
+      "Agents do not share a validation command."
     );
   });
 
