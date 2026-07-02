@@ -38,6 +38,11 @@ node ../../dist/cli.js --cwd . --json apply --session 20260702-040811-add-passwo
 
 Final recommendation: inspect Claude's worktree first.
 
+Note: this run used single-reconciler mode with Codex as the reconciler. Current
+CodeCouncil also supports `codecouncil reconcile --strategy rotate`, which asks
+each source-plan agent to reconcile independently and writes a rotation
+comparison before approval.
+
 ## What This Demonstrates
 
 - Real Codex and Claude CLIs can be orchestrated through CodeCouncil.

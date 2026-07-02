@@ -49,6 +49,8 @@ Talking point: Plans are structured and persisted for review.
 
 ```bash
 codecouncil reconcile --session <session-id> --reconciler mock-codex
+# Optional research-oriented variant:
+codecouncil reconcile --session <session-id> --strategy rotate
 codecouncil approve --session <session-id> --reconciled
 ```
 
@@ -56,10 +58,11 @@ Open:
 
 ```text
 .codecouncil/runs/<session-id>/plans/reconciled.md
+.codecouncil/runs/<session-id>/plans/reconciliation-rotation.md
 .codecouncil/runs/<session-id>/approved-plan.md
 ```
 
-Talking point: reconciliation proposes a merged plan, but implementation is still gated by explicit human approval.
+Talking point: reconciliation proposes a merged plan, and rotate mode compares reconciler bias across agents, but implementation is still gated by explicit human approval.
 
 ## 6. Implement In Worktrees
 

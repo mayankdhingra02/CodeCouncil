@@ -102,6 +102,7 @@ codecouncil init
 codecouncil plan "Add password complexity validation" --agents mock-codex,mock-claude
 codecouncil sessions list
 codecouncil reconcile --session <session-id> --reconciler mock-codex
+codecouncil reconcile --session <session-id> --strategy rotate
 codecouncil approve --session <session-id> --reconciled
 codecouncil implement --session <session-id> --agents mock-codex,mock-claude
 codecouncil test --session <session-id> --agents mock-codex,mock-claude
@@ -148,6 +149,7 @@ codecouncil doctor
 codecouncil models list
 codecouncil plan "task" --agents codex,claude
 codecouncil reconcile --session <id> --reconciler codex
+codecouncil reconcile --session <id> --strategy rotate
 codecouncil approve --session <id> --agent codex
 codecouncil approve --session <id> --reconciled
 codecouncil implement --session <id> --agents codex,claude
@@ -168,6 +170,7 @@ Set model defaults in `codecouncil.config.json`, or override per run:
 ```bash
 codecouncil plan "task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
 codecouncil reconcile --session <id> --reconciler codex --model codex=gpt-5.5
+codecouncil reconcile --session <id> --strategy rotate --models codex=gpt-5.5,claude=opus
 codecouncil review --session <id> --reviewers codex,claude --targets codex,claude --models codex=gpt-5.5,claude=fable
 ```
 

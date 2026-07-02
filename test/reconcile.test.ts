@@ -138,6 +138,78 @@ describe("reconcile CLI", () => {
     );
   });
 
+  it("rotates reconciliation across source-plan agents and writes comparison artifacts", async () => {
+    const cwd = await makeTempDir();
+    const planPayload = JSON.parse(
+      await runCli([
+        "--cwd",
+        cwd,
+        "--json",
+        "plan",
+        "Add a small retry helper",
+        "--agents",
+        "mock-codex,mock-claude"
+      ])
+    ) as {
+      sessionDir: string;
+      sessionId: string;
+    };
+
+    const reconcilePayload = JSON.parse(
+      await runCli([
+        "--cwd",
+        cwd,
+        "--json",
+        "reconcile",
+        "--session",
+        planPayload.sessionId,
+        "--strategy",
+        "rotate"
+      ])
+    ) as {
+      artifacts: {
+        candidates: Record<string, { jsonPath: string; markdownPath: string }>;
+        comparison: { jsonPath: string; markdownPath: string };
+        recommended: { jsonPath: string; markdownPath: string };
+      };
+      rotationComparison: {
+        candidates: Array<{
+          reconcilerAgentId: string;
+          reconcilerPlanSelections: number;
+          synthesisSelections: number;
+        }>;
+        recommendedReconcilerAgentId: string;
+        strategy: string;
+      };
+      status: string;
+      strategy: string;
+    };
+
+    expect(reconcilePayload).toMatchObject({
+      rotationComparison: {
+        strategy: "rotate"
+      },
+      status: "success",
+      strategy: "rotate"
+    });
+    expect(Object.keys(reconcilePayload.artifacts.candidates).sort()).toEqual(["mock-claude", "mock-codex"]);
+    expect(reconcilePayload.rotationComparison.candidates).toHaveLength(2);
+    expect(["mock-codex", "mock-claude"]).toContain(reconcilePayload.rotationComparison.recommendedReconcilerAgentId);
+
+    await expect(readFile(reconcilePayload.artifacts.candidates["mock-codex"]?.jsonPath ?? "", "utf8")).resolves.toContain(
+      "\"rotationCandidate\": true"
+    );
+    await expect(readFile(reconcilePayload.artifacts.candidates["mock-claude"]?.jsonPath ?? "", "utf8")).resolves.toContain(
+      "\"rotationCandidate\": true"
+    );
+    await expect(readFile(reconcilePayload.artifacts.comparison.markdownPath, "utf8")).resolves.toContain(
+      "# Reconciliation Rotation Comparison"
+    );
+    await expect(readFile(reconcilePayload.artifacts.recommended.jsonPath, "utf8")).resolves.toContain(
+      "\"canonicalFromRotation\": true"
+    );
+  });
+
   it("does not report corrupt comparison JSON as a missing comparison", async () => {
     const cwd = await makeTempDir();
     const planPayload = JSON.parse(

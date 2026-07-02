@@ -22,7 +22,13 @@ import {
   readReconcilerBiasMetrics,
   summarizeReconcilerBias
 } from "../reconcile/biasMetrics.js";
-import { saveReconciliationArtifacts } from "../reconcile/index.js";
+import {
+  saveReconciliationArtifacts,
+  saveRotationComparisonArtifacts,
+  type ReconciliationRotationComparison,
+  type SavedReconciliationArtifact,
+  type SaveReconciliationArtifactOptions
+} from "../reconcile/index.js";
 import {
   appendSessionEvent,
   loadTaskSession,
@@ -40,6 +46,15 @@ interface ReconcileOptions {
   models?: string;
   reconciler?: string;
   session?: string;
+  strategy?: string;
+}
+
+type ReconcileStrategy = "single" | "rotate";
+
+interface ReconciliationRun {
+  artifacts: SavedReconciliationArtifact;
+  reconciliation: ReconciliationOutput;
+  reconcilerAgentId: AgentId;
 }
 
 export function registerReconcileCommand(program: Command): void {
@@ -48,6 +63,7 @@ export function registerReconcileCommand(program: Command): void {
     .description("Ask one agent to synthesize competing plans into a human-approvable candidate.")
     .requiredOption("--session <id>", "session id containing plan artifacts")
     .option("--reconciler <agent>", "agent id to use as the reconciler")
+    .option("--strategy <strategy>", "reconciliation strategy: single or rotate", "single")
     .option("-m, --model <model>", "model override for this reconciliation run; use agent=model for one agent", collectRepeatableOption)
     .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5")
     .action(async (options: ReconcileOptions, command: Command) => {
@@ -67,8 +83,18 @@ export function registerReconcileCommand(program: Command): void {
       });
       const plans = await loadPlanArtifacts(session);
       const comparison = await loadComparisonArtifact(session);
-      const requestedReconciler = options.reconciler ? [options.reconciler] : [];
-      const reconcilerAgentId = resolveReconcilerId(runtime.loadedConfig.config, options.reconciler, plans);
+      const strategy = parseReconcileStrategy(options.strategy);
+
+      if (strategy === "rotate" && options.reconciler) {
+        throw new CodeCouncilError("--reconciler cannot be used with --strategy rotate. Rotate uses all enabled source-plan agents.", {
+          code: "RECONCILE_ROTATE_RECONCILER_CONFLICT",
+          exitCode: 2
+        });
+      }
+
+      const targetAgentIds = strategy === "rotate"
+        ? resolveRotateReconcilerIds(runtime.loadedConfig.config, plans)
+        : [resolveReconcilerId(runtime.loadedConfig.config, options.reconciler, plans)];
       const modelSelection = parseModelSelection({
         model: options.model,
         models: options.models
@@ -78,11 +104,10 @@ export function registerReconcileCommand(program: Command): void {
         modelSelection,
         {
           stage: "reconcile",
-          targetAgentIds: [reconcilerAgentId]
+          targetAgentIds
         }
       );
       const registry = AgentRegistry.fromConfig(config);
-      const reconciler = registry.get(reconcilerAgentId);
       const planInputs = createAnonymizedPlanInputs(plans);
       const planAliases = Object.fromEntries(planInputs.map(({ alias, plan }) => [alias, plan.agentId]));
       const anonymizedComparison = anonymizeReconciliationInputValue(
@@ -90,105 +115,145 @@ export function registerReconcileCommand(program: Command): void {
         Object.fromEntries(planInputs.map(({ alias, plan }) => [plan.agentId, alias]))
       );
 
-      if (!reconciler.capabilities.includes("reconcile")) {
-        throw new CodeCouncilError(`Agent "${reconciler.id}" does not support reconciliation.`, {
-          code: "AGENT_RECONCILE_UNSUPPORTED",
+      if (strategy === "rotate") {
+        const rotationRuns = [];
+        const rotationDir = path.join(session.paths.plansDir, "rotations");
+
+        for (const [index, reconcilerAgentId] of targetAgentIds.entries()) {
+          rotationRuns.push(await runReconciliationCandidate({
+            agentRegistry: registry,
+            anonymizedComparison,
+            artifactOptions: {
+              basename: reconcilerAgentId,
+              directory: rotationDir
+            },
+            config,
+            extraMetadata: {
+              rotationCandidate: true,
+              rotationCandidateIndex: index,
+              rotationReconcilerCount: targetAgentIds.length,
+              rotationStrategy: "rotate"
+            },
+            planAliases,
+            planInputs,
+            plans,
+            reconcilerAgentId,
+            repoRoot: runtime.loadedConfig.rootDir,
+            requestedReconciler: [],
+            session
+          }));
+        }
+
+        const rotationComparison = buildRotationComparison({
+          reconcilerAgentIds: targetAgentIds,
+          runs: rotationRuns,
+          session,
+          sourcePlanAgentIds: plans.map((plan) => plan.agentId)
+        });
+        const rotationArtifacts = await saveRotationComparisonArtifacts(session, rotationComparison);
+        const recommendedRun = rotationRuns.find((run) => run.reconcilerAgentId === rotationComparison.recommendedReconcilerAgentId) ?? rotationRuns[0];
+
+        if (!recommendedRun) {
+          throw new CodeCouncilError("Rotate reconciliation did not produce any candidate reconciliations.", {
+            code: "RECONCILE_ROTATE_NO_CANDIDATES",
+            exitCode: 1
+          });
+        }
+
+        const canonicalArtifacts = await saveReconciliationArtifacts(session, reconciliationOutputSchema.parse({
+          ...recommendedRun.reconciliation,
+          metadata: {
+            ...recommendedRun.reconciliation.metadata,
+            canonicalFromRotation: true,
+            rotationComparisonPath: rotationArtifacts.jsonPath
+          }
+        }));
+
+        await appendSessionEvent(session, {
+          type: "reconciliation.rotation.completed",
+          status: "success",
+          message: "Completed rotated plan reconciliation.",
+          metadata: {
+            candidateCount: rotationRuns.length,
+            comparisonJsonPath: rotationArtifacts.jsonPath,
+            comparisonMarkdownPath: rotationArtifacts.markdownPath,
+            recommendedReconcilerAgentId: rotationComparison.recommendedReconcilerAgentId
+          }
+        });
+
+        writeResult(
+          runtime.commandContext,
+          {
+            artifacts: {
+              candidates: Object.fromEntries(rotationRuns.map((run) => [run.reconcilerAgentId, run.artifacts])),
+              comparison: rotationArtifacts,
+              recommended: canonicalArtifacts
+            },
+            command: "reconcile",
+            config: formatConfigSource(runtime.loadedConfig),
+            modelSelection,
+            reconciliation: recommendedRun.reconciliation,
+            reconcilerAgentId: rotationComparison.recommendedReconcilerAgentId,
+            rotationComparison,
+            sessionId: session.id,
+            status: "success",
+            strategy
+          },
+          formatRotateReconcileOutputLines({
+            canonicalArtifacts,
+            cwd: runtime.commandContext.cwd,
+            modelSelection,
+            rotationArtifacts,
+            rotationComparison,
+            runs: rotationRuns,
+            session
+          })
+        );
+
+        return;
+      }
+
+      const reconcilerAgentId = targetAgentIds[0];
+
+      if (!reconcilerAgentId) {
+        throw new CodeCouncilError("No reconciler agent was selected.", {
+          code: "NO_RECONCILER_SELECTED",
           exitCode: 2
         });
       }
 
-      await appendSessionEvent(session, {
-        type: "reconciliation.started",
-        agentId: reconciler.id,
-        status: "running",
-        message: `Started plan reconciliation with ${reconciler.displayName}.`,
-        metadata: {
-          planCount: plans.length,
-          reconcilerAgentId: reconciler.id,
-          requestedReconciler
-        }
-      });
-
-      const availability = await reconciler.checkAvailability();
-
-      if (!availability.available) {
-        throw new CodeCouncilError(
-          `Reconciler "${reconciler.id}" is not available: ${availability.reason ?? "unknown reason"}`,
-          {
-            code: "AGENT_NOT_AVAILABLE",
-            exitCode: 2
-          }
-        );
-      }
-
-      const rawReconciliation = await reconciler.reconcilePlans({
-        comparison: anonymizedComparison,
+      const run = await runReconciliationCandidate({
+        agentRegistry: registry,
+        anonymizedComparison,
+        artifactOptions: {},
         config,
-        plans: planInputs,
+        extraMetadata: {},
+        planAliases,
+        planInputs,
+        plans,
+        reconcilerAgentId,
         repoRoot: runtime.loadedConfig.rootDir,
-        session,
-        task: session.task
-      });
-      let reconciliation = deAnonymizeReconciliationOutput(rawReconciliation, planAliases);
-      const sourcePlanAgentIds = plans.map((plan) => plan.agentId);
-      const reconcilerWasAlsoPlanner = sourcePlanAgentIds.includes(reconciler.id);
-      const reconcilerBiasMetrics = summarizeReconcilerBias({
-        reconciliation,
-        reconcilerAgentId: reconciler.id,
-        reconcilerWasAlsoPlanner,
-        sourcePlanAgentIds
-      });
-      const reconcilerBiasMetadata = reconcilerWasAlsoPlanner
-        ? {
-          reconcilerBiasWarning: "The reconciler also produced one of the source plans, so this reconciliation may contain model self-preference bias."
-        }
-        : {};
-      reconciliation = reconciliationOutputSchema.parse({
-        ...reconciliation,
-        metadata: {
-          ...reconciliation.metadata,
-          comparisonPath: path.join(session.paths.plansDir, "comparison.json"),
-          deterministicBaseline: true,
-          planAliases,
-          ...reconcilerBiasMetadata,
-          reconcilerBiasMetrics,
-          reconcilerWasAlsoPlanner,
-          sourcePlanAgentIds,
-          sourcePlanCount: plans.length
-        }
-      });
-
-      const artifacts = await saveReconciliationArtifacts(session, reconciliation);
-
-      await appendSessionEvent(session, {
-        type: "reconciliation.completed",
-        agentId: reconciler.id,
-        status: "success",
-        message: "Completed plan reconciliation.",
-        metadata: {
-          jsonPath: artifacts.jsonPath,
-          markdownPath: artifacts.markdownPath,
-          openQuestions: reconciliation.openQuestionsForHuman.length,
-          resolutions: reconciliation.resolutions.length
-        }
+        requestedReconciler: options.reconciler ? [options.reconciler] : [],
+        session
       });
 
       writeResult(
         runtime.commandContext,
         {
-          artifacts,
+          artifacts: run.artifacts,
           command: "reconcile",
           config: formatConfigSource(runtime.loadedConfig),
           modelSelection,
-          reconciliation,
+          reconciliation: run.reconciliation,
           reconcilerAgentId,
           sessionId: session.id,
-          status: "success"
+          status: "success",
+          strategy
         },
         formatReconcileOutputLines({
-          artifacts,
+          artifacts: run.artifacts,
           modelSelection,
-          reconciliation,
+          reconciliation: run.reconciliation,
           reconcilerAgentId,
           session,
           cwd: runtime.commandContext.cwd
@@ -205,6 +270,7 @@ async function loadPlanArtifacts(session: TaskSession): Promise<PlanOutput[]> {
     .filter((entry) => !entry.endsWith(".parsed.json"))
     .filter((entry) => ![
       "comparison.json",
+      "reconciliation-rotation.json",
       "reconciled.json",
       "suggested-approved-plan.json"
     ].includes(entry))
@@ -272,11 +338,206 @@ function resolveReconcilerId(
   return selected;
 }
 
+function parseReconcileStrategy(value: string | undefined): ReconcileStrategy {
+  const strategy = (value ?? "single").trim().toLowerCase();
+
+  if (strategy === "single" || strategy === "rotate") {
+    return strategy;
+  }
+
+  throw new CodeCouncilError(`Unknown reconciliation strategy "${value}". Use "single" or "rotate".`, {
+    code: "INVALID_RECONCILE_STRATEGY",
+    exitCode: 2
+  });
+}
+
+function resolveRotateReconcilerIds(
+  config: CodeCouncilConfig,
+  plans: readonly PlanOutput[]
+): AgentId[] {
+  const enabledAgentIds = new Set(
+    Object.entries(config.agents)
+      .filter(([, agentConfig]) => agentConfig.enabled)
+      .map(([agentId]) => agentId)
+  );
+  const reconcilerIds = unique(plans.map((plan) => plan.agentId).filter((agentId) => enabledAgentIds.has(agentId)));
+
+  if (reconcilerIds.length < 2) {
+    throw new CodeCouncilError("Rotate reconciliation requires at least two enabled source-plan agents.", {
+      code: "RECONCILE_ROTATE_REQUIRES_MULTIPLE_AGENTS",
+      exitCode: 2
+    });
+  }
+
+  return reconcilerIds;
+}
+
+async function runReconciliationCandidate(input: {
+  agentRegistry: AgentRegistry;
+  anonymizedComparison: unknown;
+  artifactOptions: SaveReconciliationArtifactOptions;
+  config: CodeCouncilConfig;
+  extraMetadata: Record<string, unknown>;
+  planAliases: Record<string, string>;
+  planInputs: ReconciliationPlanInput[];
+  plans: readonly PlanOutput[];
+  reconcilerAgentId: AgentId;
+  repoRoot: string;
+  requestedReconciler: string[];
+  session: TaskSession;
+}): Promise<ReconciliationRun> {
+  const reconciler = input.agentRegistry.get(input.reconcilerAgentId);
+
+  if (!reconciler.capabilities.includes("reconcile")) {
+    throw new CodeCouncilError(`Agent "${reconciler.id}" does not support reconciliation.`, {
+      code: "AGENT_RECONCILE_UNSUPPORTED",
+      exitCode: 2
+    });
+  }
+
+  await appendSessionEvent(input.session, {
+    type: "reconciliation.started",
+    agentId: reconciler.id,
+    status: "running",
+    message: `Started plan reconciliation with ${reconciler.displayName}.`,
+    metadata: {
+      planCount: input.plans.length,
+      reconcilerAgentId: reconciler.id,
+      requestedReconciler: input.requestedReconciler
+    }
+  });
+
+  const availability = await reconciler.checkAvailability();
+
+  if (!availability.available) {
+    throw new CodeCouncilError(
+      `Reconciler "${reconciler.id}" is not available: ${availability.reason ?? "unknown reason"}`,
+      {
+        code: "AGENT_NOT_AVAILABLE",
+        exitCode: 2
+      }
+    );
+  }
+
+  const rawReconciliation = await reconciler.reconcilePlans({
+    comparison: input.anonymizedComparison,
+    config: input.config,
+    plans: input.planInputs,
+    repoRoot: input.repoRoot,
+    session: input.session,
+    task: input.session.task
+  });
+  let reconciliation = deAnonymizeReconciliationOutput(rawReconciliation, input.planAliases);
+  const sourcePlanAgentIds = input.plans.map((plan) => plan.agentId);
+  const reconcilerWasAlsoPlanner = sourcePlanAgentIds.includes(reconciler.id);
+  const reconcilerBiasMetrics = summarizeReconcilerBias({
+    reconciliation,
+    reconcilerAgentId: reconciler.id,
+    reconcilerWasAlsoPlanner,
+    sourcePlanAgentIds
+  });
+  const reconcilerBiasMetadata = reconcilerWasAlsoPlanner
+    ? {
+      reconcilerBiasWarning: "The reconciler also produced one of the source plans, so this reconciliation may contain model self-preference bias."
+    }
+    : {};
+  reconciliation = reconciliationOutputSchema.parse({
+    ...reconciliation,
+    metadata: {
+      ...reconciliation.metadata,
+      comparisonPath: path.join(input.session.paths.plansDir, "comparison.json"),
+      deterministicBaseline: true,
+      planAliases: input.planAliases,
+      ...reconcilerBiasMetadata,
+      reconcilerBiasMetrics,
+      reconcilerWasAlsoPlanner,
+      sourcePlanAgentIds,
+      sourcePlanCount: input.plans.length,
+      ...input.extraMetadata
+    }
+  });
+
+  const artifacts = await saveReconciliationArtifacts(input.session, reconciliation, input.artifactOptions);
+
+  await appendSessionEvent(input.session, {
+    type: "reconciliation.completed",
+    agentId: reconciler.id,
+    status: "success",
+    message: "Completed plan reconciliation.",
+    metadata: {
+      jsonPath: artifacts.jsonPath,
+      markdownPath: artifacts.markdownPath,
+      openQuestions: reconciliation.openQuestionsForHuman.length,
+      resolutions: reconciliation.resolutions.length
+    }
+  });
+
+  return {
+    artifacts,
+    reconciliation,
+    reconcilerAgentId: input.reconcilerAgentId
+  };
+}
+
+function buildRotationComparison(input: {
+  reconcilerAgentIds: readonly string[];
+  runs: readonly ReconciliationRun[];
+  session: TaskSession;
+  sourcePlanAgentIds: readonly string[];
+}): ReconciliationRotationComparison {
+  const candidates = input.runs.map((run) => {
+    const metrics = readReconcilerBiasMetrics(run.reconciliation.metadata["reconcilerBiasMetrics"]);
+
+    return {
+      confidence: run.reconciliation.confidence,
+      openQuestions: run.reconciliation.openQuestionsForHuman.length,
+      reconcilerAgentId: run.reconcilerAgentId,
+      reconcilerPlanSelections: metrics?.reconcilerPlanSelections ?? 0,
+      synthesisSelections: metrics?.synthesisSelections ?? 0,
+      totalResolutions: run.reconciliation.resolutions.length
+    };
+  });
+  const rankedCandidates = [...candidates].sort((left, right) =>
+    left.reconcilerPlanSelections - right.reconcilerPlanSelections ||
+    left.openQuestions - right.openQuestions ||
+    right.synthesisSelections - left.synthesisSelections ||
+    right.confidence - left.confidence ||
+    input.reconcilerAgentIds.indexOf(left.reconcilerAgentId) - input.reconcilerAgentIds.indexOf(right.reconcilerAgentId)
+  );
+  const recommended = rankedCandidates[0] ?? candidates[0];
+
+  if (!recommended) {
+    throw new CodeCouncilError("No reconciliation candidates were available to compare.", {
+      code: "RECONCILE_ROTATE_NO_CANDIDATES",
+      exitCode: 1
+    });
+  }
+
+  return {
+    candidates,
+    generatedAt: new Date().toISOString(),
+    recommendedReconcilerAgentId: recommended.reconcilerAgentId,
+    recommendationReason: "Selected by lowest own-plan selections, then fewest open questions, then most synthesis selections, then highest confidence.",
+    reconcilerAgentIds: [...input.reconcilerAgentIds],
+    sessionId: input.session.id,
+    sourcePlanAgentIds: [...input.sourcePlanAgentIds],
+    strategy: "rotate",
+    warnings: [
+      "Rotated reconciliation compares candidate plans, but it is still a heuristic and not a proof of correctness.",
+      "A human must explicitly approve a reconciled candidate before implementation."
+    ]
+  };
+}
+
 function createAnonymizedPlanInputs(plans: readonly PlanOutput[]): ReconciliationPlanInput[] {
   return plans.map((plan, index) => ({
     alias: `agent-${String.fromCharCode(97 + index)}`,
     plan
   }));
+}
+
+function unique(items: readonly string[]): string[] {
+  return [...new Set(items)];
 }
 
 export function anonymizeReconciliationInputValue(
@@ -411,6 +672,43 @@ function formatReconcileOutputLines(input: {
     `JSON: ${path.relative(input.cwd, input.artifacts.jsonPath) || "."}`,
     `Markdown: ${path.relative(input.cwd, input.artifacts.markdownPath) || "."}`,
     `Next: codecouncil approve --session ${input.session.id} --reconciled`
+  ];
+}
+
+function formatRotateReconcileOutputLines(input: {
+  canonicalArtifacts: { jsonPath: string; markdownPath: string };
+  cwd: string;
+  modelSelection: ModelSelection;
+  rotationArtifacts: { jsonPath: string; markdownPath: string };
+  rotationComparison: ReconciliationRotationComparison;
+  runs: readonly ReconciliationRun[];
+  session: TaskSession;
+}): string[] {
+  return [
+    "Rotated reconciliation complete.",
+    `Session: ${input.session.id}`,
+    `Reconcilers: ${input.rotationComparison.reconcilerAgentIds.join(", ")}`,
+    `Recommended candidate: ${input.rotationComparison.recommendedReconcilerAgentId}`,
+    "",
+    "Candidates:",
+    ...formatListItems(input.runs.map((run) => {
+      const metrics = readReconcilerBiasMetrics(run.reconciliation.metadata["reconcilerBiasMetrics"]);
+      const metricSummary = metrics
+        ? `own=${metrics.reconcilerPlanSelections}, other=${metrics.otherPlannerSelections}, synthesis=${metrics.synthesisSelections}, unknown=${metrics.unknownSelections}`
+        : "bias metrics unavailable";
+
+      return `${run.reconcilerAgentId}: ${run.reconciliation.mergedPlan.summary} (${metricSummary})`;
+    })),
+    "",
+    "Selection policy:",
+    `- ${input.rotationComparison.recommendationReason}`,
+    "",
+    ...formatModelSelectionLines(input.modelSelection),
+    `Recommended JSON: ${path.relative(input.cwd, input.canonicalArtifacts.jsonPath) || "."}`,
+    `Recommended Markdown: ${path.relative(input.cwd, input.canonicalArtifacts.markdownPath) || "."}`,
+    `Rotation JSON: ${path.relative(input.cwd, input.rotationArtifacts.jsonPath) || "."}`,
+    `Rotation Markdown: ${path.relative(input.cwd, input.rotationArtifacts.markdownPath) || "."}`,
+    `Next: review ${path.relative(input.cwd, input.rotationArtifacts.markdownPath) || input.rotationArtifacts.markdownPath}, then codecouncil approve --session ${input.session.id} --reconciled`
   ];
 }
 

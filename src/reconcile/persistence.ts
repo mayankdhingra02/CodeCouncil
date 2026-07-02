@@ -13,17 +13,47 @@ export interface SavedReconciliationArtifact {
   rawOutputPath?: string;
 }
 
+export interface SaveReconciliationArtifactOptions {
+  basename?: string;
+  directory?: string;
+}
+
+export interface RotationComparisonCandidate {
+  confidence: number;
+  openQuestions: number;
+  reconcilerAgentId: string;
+  reconcilerPlanSelections: number;
+  synthesisSelections: number;
+  totalResolutions: number;
+}
+
+export interface ReconciliationRotationComparison {
+  candidates: RotationComparisonCandidate[];
+  generatedAt: string;
+  recommendedReconcilerAgentId: string;
+  recommendationReason: string;
+  reconcilerAgentIds: string[];
+  sessionId: string;
+  sourcePlanAgentIds: string[];
+  strategy: "rotate";
+  warnings: string[];
+}
+
 export async function saveReconciliationArtifacts(
   session: TaskSession,
-  reconciliation: ReconciliationOutput
+  reconciliation: ReconciliationOutput,
+  options: SaveReconciliationArtifactOptions = {}
 ): Promise<SavedReconciliationArtifact> {
-  await mkdir(session.paths.plansDir, { recursive: true });
+  const targetDir = options.directory ?? session.paths.plansDir;
+  const basename = sanitizeArtifactName(options.basename ?? "reconciled");
 
-  const jsonPath = path.join(session.paths.plansDir, "reconciled.json");
-  const markdownPath = path.join(session.paths.plansDir, "reconciled.md");
-  const metadataPath = path.join(session.paths.plansDir, "reconciled.command.json");
-  const parsedOutputPath = path.join(session.paths.plansDir, "reconciled.parsed.json");
-  const rawOutputPath = path.join(session.paths.plansDir, "reconciled.raw.txt");
+  await mkdir(targetDir, { recursive: true });
+
+  const jsonPath = path.join(targetDir, `${basename}.json`);
+  const markdownPath = path.join(targetDir, `${basename}.md`);
+  const metadataPath = path.join(targetDir, `${basename}.command.json`);
+  const parsedOutputPath = path.join(targetDir, `${basename}.parsed.json`);
+  const rawOutputPath = path.join(targetDir, `${basename}.raw.txt`);
 
   await writeFile(jsonPath, `${JSON.stringify(reconciliation, null, 2)}\n`, "utf8");
   await writeFile(markdownPath, renderReconciliationMarkdown(session, reconciliation), "utf8");
@@ -64,6 +94,23 @@ export async function saveReconciliationArtifacts(
   }
 
   return result;
+}
+
+export async function saveRotationComparisonArtifacts(
+  session: TaskSession,
+  comparison: ReconciliationRotationComparison
+): Promise<{ jsonPath: string; markdownPath: string }> {
+  const jsonPath = path.join(session.paths.plansDir, "reconciliation-rotation.json");
+  const markdownPath = path.join(session.paths.plansDir, "reconciliation-rotation.md");
+
+  await mkdir(session.paths.plansDir, { recursive: true });
+  await writeFile(jsonPath, `${JSON.stringify(comparison, null, 2)}\n`, "utf8");
+  await writeFile(markdownPath, renderRotationComparisonMarkdown(comparison), "utf8");
+
+  return {
+    jsonPath,
+    markdownPath
+  };
 }
 
 export function renderReconciliationMarkdown(
@@ -218,4 +265,44 @@ function renderList(title: string, items: readonly string[]): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function renderRotationComparisonMarkdown(comparison: ReconciliationRotationComparison): string {
+  return [
+    "# Reconciliation Rotation Comparison",
+    "",
+    `Session: \`${comparison.sessionId}\``,
+    `Generated: ${comparison.generatedAt}`,
+    "",
+    "## Recommendation",
+    "",
+    `Inspect reconciled candidate from \`${comparison.recommendedReconcilerAgentId}\` first.`,
+    "",
+    comparison.recommendationReason,
+    "",
+    "## Candidates",
+    "",
+    "| Reconciler | Confidence | Resolutions | Own-Plan Picks | Synthesis Picks | Open Questions |",
+    "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ...comparison.candidates.map(
+      (candidate) => `| \`${candidate.reconcilerAgentId}\` | ${Math.round(candidate.confidence * 100)}% | ${candidate.totalResolutions} | ${candidate.reconcilerPlanSelections} | ${candidate.synthesisSelections} | ${candidate.openQuestions} |`
+    ),
+    "",
+    "## Source Plan Agents",
+    "",
+    ...comparison.sourcePlanAgentIds.map((agentId) => `- \`${agentId}\``),
+    "",
+    "## Warnings",
+    "",
+    ...(comparison.warnings.length > 0 ? comparison.warnings.map((warning) => `- ${warning}`) : ["- None"]),
+    "",
+    "## Approval",
+    "",
+    "Rotation creates multiple candidate reconciliations. CodeCouncil writes the recommended candidate to `plans/reconciled.json`, but it is still only a candidate until you run `codecouncil approve --session <id> --reconciled`.",
+    ""
+  ].join("\n");
+}
+
+function sanitizeArtifactName(value: string): string {
+  return value.replace(/[^a-z0-9._-]+/giu, "-");
 }

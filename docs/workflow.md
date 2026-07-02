@@ -30,6 +30,7 @@ codecouncil doctor
 codecouncil models list
 codecouncil plan "task" --agents codex,claude
 codecouncil reconcile --session <id> --reconciler codex
+codecouncil reconcile --session <id> --strategy rotate
 codecouncil approve --session <id> --reconciled
 codecouncil approve --session <id> --agent codex
 codecouncil implement --session <id> --agents codex,claude
@@ -39,6 +40,27 @@ codecouncil safety --session <id>
 codecouncil report --session <id>
 codecouncil apply --session <id> --agent codex --dry-run
 ```
+
+## Reconciliation Strategies
+
+Single reconciliation asks one agent to synthesize the competing plans:
+
+```bash
+codecouncil reconcile --session <id> --reconciler codex
+```
+
+Rotated reconciliation asks each enabled source-plan agent to reconcile the same
+plans independently, writes per-reconciler candidates under
+`plans/rotations/`, writes `plans/reconciliation-rotation.md`, and copies the
+recommended candidate to `plans/reconciled.json` for explicit approval:
+
+```bash
+codecouncil reconcile --session <id> --strategy rotate
+```
+
+The recommendation is deterministic: CodeCouncil favors fewer own-plan
+selections, fewer open questions, more synthesis selections, then higher
+confidence. This is a bias signal for human review, not an automatic decision.
 
 ## Guided Solve
 

@@ -107,6 +107,11 @@ export async function collectWorkflowArtifacts(
   await addIfExists(artifacts, "comparison", path.join(session.paths.plansDir, "comparison.json"));
   await addIfExists(
     artifacts,
+    "reconciliationRotation",
+    path.join(session.paths.plansDir, "reconciliation-rotation.json")
+  );
+  await addIfExists(
+    artifacts,
     "suggestedApproval",
     path.join(session.paths.plansDir, "suggested-approved-plan.md")
   );
@@ -245,6 +250,8 @@ function inferAgentsFromArtifacts(artifacts: Record<string, readonly string[]>):
     if ([
       "comparison.json",
       "comparison.md",
+      "reconciliation-rotation.json",
+      "reconciliation-rotation.md",
       "reconciled.json",
       "reconciled.md",
       "suggested-approved-plan.json",

@@ -50,6 +50,16 @@ codecouncil reconcile --session <session-id> --reconciler mock-codex
 codecouncil approve --session <session-id> --reconciled
 ```
 
+To compare reconciliation bias between both mock planners, use rotate mode:
+
+```bash
+codecouncil reconcile --session <session-id> --strategy rotate
+```
+
+Rotate mode saves each reconciler's candidate under `plans/rotations/`, writes a
+`plans/reconciliation-rotation.md` comparison, and still requires explicit
+approval before implementation.
+
 Run the implementation workflow:
 
 ```bash
@@ -102,4 +112,5 @@ Before a real-agent run, inspect and choose model/cost tradeoffs:
 codecouncil models list
 codecouncil plan "your task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
 codecouncil reconcile --session <session-id> --reconciler codex --model codex=gpt-5.5
+codecouncil reconcile --session <session-id> --strategy rotate
 ```
