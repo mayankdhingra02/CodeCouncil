@@ -87,6 +87,10 @@ describe("loadConfig", () => {
         }
       },
       testCommands: ["pnpm test"],
+      testContainer: {
+        image: "node:20-bookworm-slim",
+        timeoutSeconds: 600
+      },
       ignore: [".env"],
       safety: {
         requireApprovalBeforeApply: false,
@@ -94,6 +98,28 @@ describe("loadConfig", () => {
         defaultPlanModeReadOnly: true,
         allowImplementationByDefault: false
       }
+    });
+  });
+
+  it("loads containerized test configuration", async () => {
+    const cwd = await makeTempDir();
+    await writeFile(
+      path.join(cwd, "codecouncil.config.json"),
+      JSON.stringify({
+        projectName: "container-tests",
+        testContainer: {
+          image: "node:22-bookworm-slim",
+          timeoutSeconds: 120
+        }
+      }),
+      "utf8"
+    );
+
+    const loaded = await loadConfig({ cwd });
+
+    expect(loaded.config.testContainer).toEqual({
+      image: "node:22-bookworm-slim",
+      timeoutSeconds: 120
     });
   });
 

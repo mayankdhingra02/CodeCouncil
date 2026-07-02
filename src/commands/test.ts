@@ -12,7 +12,9 @@ import {
 } from "../scoring/index.js";
 import { appendSessionEvent, loadTaskSession, type TaskSession } from "../session/index.js";
 import {
+  assertDockerTestRuntimeAvailable,
   runTestCommand,
+  runContainerizedTestCommand,
   saveAgentTestSummary,
   saveTestSessionSummary,
   selectTestCommands,
@@ -31,6 +33,8 @@ interface TestOptions {
   agent?: string[];
   agents?: string;
   command?: string[];
+  container?: boolean;
+  containerImage?: string;
   session?: string;
   timeoutSeconds?: string;
 }
@@ -39,6 +43,7 @@ interface AgentTestCliSummary {
   agentId: AgentId;
   changedFiles: string[];
   commands: string[];
+  executionMode: "container" | "host";
   diffSizeBytes: number;
   durationMs: number;
   preliminaryScore: number;
@@ -67,8 +72,10 @@ export function registerTestCommand(program: Command): void {
     .option("-a, --agent <agent>", "agent id to include; repeat for multiple agents", collectRepeatableOption)
     .option("--agents <agents>", "comma-separated agent ids to include")
     .option("--command <command>", "test command to run; repeat for multiple commands", collectRepeatableOption)
+    .option("--container", "run tests inside Docker with the agent worktree mounted as /workspace")
+    .option("--container-image <image>", "Docker image to use with --container; overrides testContainer.image")
     .option("--session <id>", "session id containing implementation worktrees")
-    .option("--timeout-seconds <seconds>", "timeout per test command", String(DEFAULT_TEST_TIMEOUT_SECONDS))
+    .option("--timeout-seconds <seconds>", "timeout per test command")
     .action(async (options: TestOptions, command: Command) => {
       const runtime = await loadRuntimeContext(command);
 
@@ -79,7 +86,14 @@ export function registerTestCommand(program: Command): void {
         });
       }
 
-      const timeoutSeconds = parseTimeoutSeconds(options.timeoutSeconds);
+      const executionMode = options.container === true ? "container" : "host";
+      const containerImage = options.containerImage ?? runtime.loadedConfig.config.testContainer.image;
+      const timeoutSeconds = parseTimeoutSeconds(
+        options.timeoutSeconds,
+        executionMode === "container"
+          ? runtime.loadedConfig.config.testContainer.timeoutSeconds
+          : DEFAULT_TEST_TIMEOUT_SECONDS
+      );
       const session = await loadTaskSession({
         rootDir: runtime.loadedConfig.rootDir,
         sessionId: options.session,
@@ -100,6 +114,12 @@ export function registerTestCommand(program: Command): void {
         rootDir: worktrees[0]?.worktreePath ?? runtime.loadedConfig.rootDir
       });
 
+      if (executionMode === "container") {
+        await assertDockerTestRuntimeAvailable({
+          image: containerImage
+        });
+      }
+
       await appendSessionEvent(session, {
         type: "tests.started",
         status: "running",
@@ -107,7 +127,9 @@ export function registerTestCommand(program: Command): void {
         metadata: {
           agents: selectedAgents.map((agent) => agent.id),
           commandSource: commandSelection.source,
-          commands: commandSelection.commands
+          commands: commandSelection.commands,
+          executionMode,
+          ...(executionMode === "container" ? { containerImage } : {})
         }
       });
 
@@ -118,7 +140,9 @@ export function registerTestCommand(program: Command): void {
       for (const worktree of worktrees) {
         const agentSummary = await runTestsForAgent({
           agentId: worktree.agentId,
+          containerImage,
           commandSelection,
+          executionMode,
           session,
           timeoutSeconds,
           worktreePath: worktree.worktreePath
@@ -142,6 +166,7 @@ export function registerTestCommand(program: Command): void {
           agentId: worktree.agentId,
           changedFiles: implementation.changedFiles,
           commands: commandSelection.commands,
+          executionMode,
           diffSizeBytes,
           durationMs: agentSummary.durationMs,
           preliminaryScore: score.score,
@@ -183,7 +208,16 @@ export function registerTestCommand(program: Command): void {
         {
           command: "test",
           commandSelection,
+          container:
+            executionMode === "container"
+              ? {
+                  image: containerImage,
+                  network: "none",
+                  workdir: "/workspace"
+                }
+              : undefined,
           config: formatConfigSource(runtime.loadedConfig),
+          executionMode,
           scores,
           scoresPath: savedScores.jsonPath,
           sessionId: session.id,
@@ -195,6 +229,7 @@ export function registerTestCommand(program: Command): void {
           "Test phase complete.",
           `Session: ${session.id}`,
           `Command source: ${commandSelection.source}`,
+          `Execution mode: ${executionMode}${executionMode === "container" ? ` (${containerImage})` : ""}`,
           "",
           ...renderCliTable(cliSummaries),
           "",
@@ -207,7 +242,9 @@ export function registerTestCommand(program: Command): void {
 
 async function runTestsForAgent(options: {
   agentId: AgentId;
+  containerImage: string;
   commandSelection: TestCommandSelection;
+  executionMode: "container" | "host";
   session: TaskSession;
   timeoutSeconds: number;
   worktreePath: string;
@@ -219,6 +256,8 @@ async function runTestsForAgent(options: {
     message: `Started tests for ${options.agentId}.`,
     metadata: {
       commands: options.commandSelection.commands,
+      executionMode: options.executionMode,
+      ...(options.executionMode === "container" ? { containerImage: options.containerImage } : {}),
       worktreePath: options.worktreePath
     }
   });
@@ -227,11 +266,18 @@ async function runTestsForAgent(options: {
 
   for (const commandLine of options.commandSelection.commands) {
     runs.push(
-      await runTestCommand({
-        commandLine,
-        cwd: options.worktreePath,
-        timeoutMs: options.timeoutSeconds * 1000
-      })
+      options.executionMode === "container"
+        ? await runContainerizedTestCommand({
+            commandLine,
+            cwd: options.worktreePath,
+            image: options.containerImage,
+            timeoutMs: options.timeoutSeconds * 1000
+          })
+        : await runTestCommand({
+            commandLine,
+            cwd: options.worktreePath,
+            timeoutMs: options.timeoutSeconds * 1000
+          })
     );
   }
 
@@ -254,6 +300,7 @@ async function runTestsForAgent(options: {
           : `Tests failed for ${options.agentId}.`,
     metadata: {
       durationMs: summary.durationMs,
+      executionMode: options.executionMode,
       summaryJsonPath: summary.summaryJsonPath
     }
   });
@@ -367,8 +414,8 @@ function parseAgentsOption(value: string | undefined): AgentId[] {
     .filter(Boolean);
 }
 
-function parseTimeoutSeconds(value: string | undefined): number {
-  const parsed = Number(value ?? DEFAULT_TEST_TIMEOUT_SECONDS);
+function parseTimeoutSeconds(value: string | undefined, fallbackSeconds: number): number {
+  const parsed = Number(value ?? fallbackSeconds);
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new CodeCouncilError("--timeout-seconds must be a positive integer.", {
@@ -390,9 +437,10 @@ function asStringArray(value: unknown): string[] {
 
 function renderCliTable(summaries: readonly AgentTestCliSummary[]): string[] {
   const rows = [
-    ["agent", "tests", "command", "duration", "changed", "diff", "score"],
+    ["agent", "mode", "tests", "command", "duration", "changed", "diff", "score"],
     ...summaries.map((summary) => [
       summary.agentId,
+      summary.executionMode,
       summary.testsRun ? (summary.testsPassed ? "passed" : "failed") : "skipped",
       summary.commands.join("; ") || "(none)",
       formatDuration(summary.durationMs),

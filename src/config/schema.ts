@@ -72,6 +72,13 @@ export const codeCouncilConfigSchema = z
       .refine((agents) => Object.keys(agents).length > 0, "At least one agent must be configured.")
       .default(defaultAgentInputs),
     testCommands: z.array(z.string().min(1)).default([]),
+    testContainer: z
+      .object({
+        image: z.string().min(1).default("node:20-bookworm-slim"),
+        timeoutSeconds: z.number().int().positive().default(600)
+      })
+      .strict()
+      .default({}),
     ignore: z.array(z.string().min(1)).default([...DEFAULT_IGNORE_PATTERNS]),
     review: z
       .object({

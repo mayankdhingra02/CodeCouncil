@@ -70,6 +70,14 @@ codecouncil safety --session <session-id>
 codecouncil report --session <session-id>
 ```
 
+For higher-risk repositories, run tests inside Docker instead of on the host:
+
+```bash
+codecouncil test --session <session-id> --agents mock-codex,mock-claude --container
+```
+
+The configured Docker image must already exist locally.
+
 Preview apply instructions:
 
 ```bash

@@ -121,13 +121,14 @@ export function renderTestSummaryMarkdown(summary: TestSessionSummary): string {
     `Status: ${summary.status}`,
     `Command source: ${summary.commandSelection.source}`,
     "",
-    "| Agent | Status | Commands | Duration |",
-    "| --- | --- | --- | --- |"
+    "| Agent | Status | Mode | Commands | Duration |",
+    "| --- | --- | --- | --- | --- |"
   ];
 
   for (const agentSummary of summary.summaries) {
+    const modes = unique(agentSummary.commands.map((command) => command.executionMode));
     lines.push(
-      `| ${agentSummary.agentId} | ${agentSummary.status} | ${agentSummary.commands.length} | ${formatDuration(agentSummary.durationMs)} |`
+      `| ${agentSummary.agentId} | ${agentSummary.status} | ${modes.join(", ") || "n/a"} | ${agentSummary.commands.length} | ${formatDuration(agentSummary.durationMs)} |`
     );
   }
 
@@ -138,7 +139,7 @@ export function renderTestSummaryMarkdown(summary: TestSessionSummary): string {
 
     for (const command of agentSummary.commands) {
       lines.push(
-        `- \`${command.commandLine}\`: ${command.status} (${formatDuration(command.durationMs)}, exit ${command.exitCode ?? "n/a"})`
+        `- \`${command.commandLine}\`: ${command.status} (${command.executionMode}, ${formatDuration(command.durationMs)}, exit ${command.exitCode ?? "n/a"})`
       );
     }
 
@@ -158,4 +159,8 @@ function formatDuration(durationMs: number): string {
   }
 
   return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }

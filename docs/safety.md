@@ -57,7 +57,19 @@ For v0.1, CodeCouncil itself runs:
 
 Test commands are parsed into argv and executed without shell interpolation. CodeCouncil rejects compound shell syntax such as pipes and `&&`.
 
-This is not a sandbox. Test commands run agent-authored code from the implementation worktree on the host. Treat this as trusted-code execution unless you run CodeCouncil inside a container or VM.
+By default, test commands run agent-authored code from the implementation worktree on the host. Treat this as trusted-code execution.
+
+For higher-risk work, use:
+
+```bash
+codecouncil test --session <id> --agents codex,claude --container
+```
+
+Containerized test execution mounts the selected agent worktree at `/workspace`,
+disables Docker networking, and saves the same test logs/artifacts as host mode.
+It uses a locally available Docker image from `testContainer.image`; CodeCouncil
+does not pull images or install dependencies automatically. Containers reduce
+host exposure, but they are still defense-in-depth rather than a perfect sandbox.
 
 Saved artifacts are scanned for suspicious command text such as:
 
@@ -95,9 +107,9 @@ Artifacts:
 
 ## Current Limits
 
-- No container sandbox is enabled by default.
+- No container sandbox is enabled by default; use `codecouncil test --container` explicitly.
 - Git worktrees are not a security boundary.
-- Test execution can run agent-authored code on the host.
+- Host-mode test execution can run agent-authored code on the host.
 - Real agents can still propose bad code.
 - Real agent CLIs may have their own behavior outside CodeCouncil's control.
 - Redaction catches common secret shapes, not every possible secret.

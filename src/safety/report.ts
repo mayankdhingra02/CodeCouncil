@@ -43,9 +43,10 @@ export async function generateSafetySummary(options: {
     .map((filePath) => classifyFilePath(filePath, classifierOptions))
     .filter((classification) => classification.blocked || classification.ignored || classification.suspicious);
   const riskyCommands = await scanSessionArtifactsForRiskyCommands(options.session);
+  const testExecutionModes = await loadTestExecutionModes(options.session);
   const warnings = [
     "Git worktrees scope intended diffs, but they are not OS sandboxes and do not prevent an agent CLI from accessing other user-writable paths.",
-    "Configured test commands execute code from agent worktrees on the host; use external sandboxing or containers for untrusted code.",
+    ...buildTestExecutionWarnings(testExecutionModes),
     ...safety.warnings,
     ...sensitiveFilesTouched
       .filter((classification) => classification.blocked && !classification.ignored)
@@ -145,6 +146,53 @@ async function loadChangedFiles(session: TaskSession): Promise<string[]> {
   }
 
   return unique(changedFiles);
+}
+
+async function loadTestExecutionModes(session: TaskSession): Promise<string[]> {
+  const summaryPath = path.join(session.paths.testsDir, "summary.json");
+
+  try {
+    const parsed = JSON.parse(await readFile(summaryPath, "utf8")) as {
+      summaries?: Array<{
+        commands?: Array<{
+          executionMode?: unknown;
+        }>;
+      }>;
+    };
+
+    return unique(
+      (parsed.summaries ?? [])
+        .flatMap((summary) => summary.commands ?? [])
+        .map((command) => command.executionMode)
+        .filter((mode): mode is string => typeof mode === "string")
+    );
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+function buildTestExecutionWarnings(modes: readonly string[]): string[] {
+  if (modes.includes("container") && modes.includes("host")) {
+    return [
+      "Some configured test commands ran in Docker containers and some ran on the host; inspect test artifacts before trusting results.",
+      "Containerized tests reduce host exposure, but they are not a complete sandbox. Trust the configured image and command before running untrusted code."
+    ];
+  }
+
+  if (modes.includes("container")) {
+    return [
+      "Configured test commands ran in Docker containers with the agent worktree mounted as /workspace and Docker network disabled.",
+      "Containerized tests reduce host exposure, but they are not a complete sandbox. Trust the configured image and command before running untrusted code."
+    ];
+  }
+
+  return [
+    "Configured test commands execute code from agent worktrees on the host; use --container, external sandboxing, or VMs for untrusted code."
+  ];
 }
 
 async function scanSessionArtifactsForRiskyCommands(session: TaskSession): Promise<DangerousCommandFinding[]> {

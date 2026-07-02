@@ -46,6 +46,10 @@ Fallback legacy name:
     }
   },
   "testCommands": ["npm test"],
+  "testContainer": {
+    "image": "node:20-bookworm-slim",
+    "timeoutSeconds": 600
+  },
   "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil"],
   "review": {
     "maxDiffBytes": 120000
@@ -196,3 +200,34 @@ If `testCommands` is set, CodeCouncil uses those commands first. If not, it dete
 - .NET
 
 Test commands are parsed into argv and run without shell interpolation. Compound shell commands are rejected.
+
+## Containerized Test Execution
+
+Containerized test execution is opt-in:
+
+```bash
+codecouncil test --session <id> --agents codex,claude --container
+```
+
+Config:
+
+```json
+{
+  "testContainer": {
+    "image": "node:20-bookworm-slim",
+    "timeoutSeconds": 600
+  }
+}
+```
+
+When `--container` is set, CodeCouncil:
+
+- verifies Docker is available and the configured image already exists locally
+- does not pull images automatically
+- does not install project dependencies automatically
+- mounts only the selected agent worktree at `/workspace`
+- runs with Docker network disabled
+- saves stdout, stderr, exit code, duration, and command JSON under the usual `tests/<agent>/` directory
+
+Use `--container-image <image>` to override the configured image for one run.
+Use `--timeout-seconds <seconds>` to override the configured container timeout.

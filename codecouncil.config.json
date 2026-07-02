@@ -23,6 +23,10 @@
     }
   },
   "testCommands": ["pnpm test"],
+  "testContainer": {
+    "image": "node:20-bookworm-slim",
+    "timeoutSeconds": 600
+  },
   "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil", "dist", "coverage"],
   "review": {
     "maxDiffBytes": 120000

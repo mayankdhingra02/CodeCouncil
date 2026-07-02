@@ -15,6 +15,7 @@ The format is inspired by Keep a Changelog, and this project uses semantic versi
 - Mock Codex and Claude agents for local demos and tests.
 - Real Codex CLI and Claude Code CLI adapters through configurable child-process commands.
 - Cross-agent review, test execution, implementation scoring, safety summaries, and final reports.
+- Optional `codecouncil test --container` mode for Docker-based test execution with worktree-only mounts and disabled container networking.
 - Benchmark mode for comparing single-agent and two-agent workflows.
 - Minimal VS Code extension wrapper around the CLI.
 - Demo fixture under `examples/demo-repo`.

@@ -35,6 +35,7 @@ codecouncil approve --session <id> --reconciled
 codecouncil approve --session <id> --agent codex
 codecouncil implement --session <id> --agents codex,claude
 codecouncil test --session <id> --agents codex,claude
+codecouncil test --session <id> --agents codex,claude --container
 codecouncil review --session <id> --reviewers codex,claude --targets codex,claude
 codecouncil safety --session <id>
 codecouncil report --session <id>
@@ -105,6 +106,14 @@ codecouncil/<session-id>/<agent-id>
 ```
 
 CodeCouncil does not merge, push, or apply these branches automatically.
+
+## Containerized Tests
+
+`codecouncil test --container` runs the same configured or detected test commands
+inside Docker, mounting only the selected agent worktree at `/workspace` with
+networking disabled. The Docker image comes from `testContainer.image` and must
+already be present locally; CodeCouncil does not pull images or install
+dependencies automatically.
 
 ## Final Report
 

@@ -35,6 +35,10 @@
     }
   },
   "testCommands": ["npm test"],
+  "testContainer": {
+    "image": "node:20-bookworm-slim",
+    "timeoutSeconds": 600
+  },
   "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil"],
   "review": {
     "maxDiffBytes": 120000

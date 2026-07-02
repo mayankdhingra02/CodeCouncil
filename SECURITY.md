@@ -84,6 +84,12 @@ Suspicious filenames such as `.npmrc`, `.pypirc`, SSH config files, or names con
 
 Test stdout and stderr are saved locally under the session `tests/` directory. Logs are redacted with the same common secret-pattern redactor used for agent command output, but they should still be treated as sensitive project artifacts.
 
+`codecouncil test --container` optionally runs tests in Docker. It verifies the
+configured image exists locally, does not pull images automatically, mounts only
+the selected agent worktree at `/workspace`, disables Docker networking, and
+persists the same stdout/stderr/result artifacts as host-mode tests. This reduces
+host exposure, but it is still defense-in-depth rather than a complete sandbox.
+
 ## Review Safety
 
 Cross-agent review is read-only. Review prompts include the task, approved plan, changed file list, diff or high-level diff summary, tests, and safety warnings. Review agents are instructed not to modify files, apply patches, or reveal hidden chain-of-thought.

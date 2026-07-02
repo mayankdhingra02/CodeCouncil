@@ -8,12 +8,13 @@ import { savePlanArtifacts, type PlanOutput } from "../src/agents/index.js";
 import { createCli } from "../src/cli.js";
 import { createDefaultConfig } from "../src/config/defaults.js";
 import { calculateImplementationScore } from "../src/scoring/index.js";
+import { generateSafetySummary } from "../src/safety/report.js";
 import {
   approveAgentPlan,
   createTaskSession,
   type TaskSession
 } from "../src/session/index.js";
-import { detectProjectTypes, selectTestCommands } from "../src/testing/index.js";
+import { buildDockerRunArgs, detectProjectTypes, selectTestCommands } from "../src/testing/index.js";
 
 describe("test detection", () => {
   it("detects supported project types and default test commands", async () => {
@@ -80,6 +81,33 @@ describe("test detection", () => {
 });
 
 describe("test runner CLI", () => {
+  it("builds Docker run args for containerized tests without shell interpolation", () => {
+    expect(
+      buildDockerRunArgs({
+        command: "npm",
+        commandArgs: ["test"],
+        image: "node:20-bookworm-slim",
+        mountPath: "/tmp/worktree"
+      })
+    ).toEqual([
+      "run",
+      "--rm",
+      "--pull",
+      "never",
+      "--network",
+      "none",
+      "--workdir",
+      "/workspace",
+      "--volume",
+      "/tmp/worktree:/workspace",
+      "--env",
+      "CI=1",
+      "node:20-bookworm-slim",
+      "npm",
+      "test"
+    ]);
+  });
+
   it("runs successful tests in an implementation worktree and saves scores", async () => {
     const repo = await createTempGitRepo({
       "pass-test.mjs": "console.log('pass ok');\n"
@@ -177,6 +205,87 @@ describe("test runner CLI", () => {
     await expect(
       readFile(path.join(session.paths.testsDir, "mock-codex", "command-1.stderr.log"), "utf8")
     ).resolves.toContain("fail expected");
+  });
+
+  it("fails gracefully when Docker is unavailable for containerized tests", async () => {
+    const repo = await createTempGitRepo({
+      "pass-test.mjs": "console.log('pass ok');\n"
+    });
+    const session = await createApprovedSession(repo, "Container unavailable");
+    const previousDockerCommand = process.env.CODECOUNCIL_DOCKER_COMMAND;
+
+    await runCli([
+      "--cwd",
+      repo,
+      "implement",
+      "--session",
+      session.id,
+      "--agents",
+      "mock-codex"
+    ]);
+
+    process.env.CODECOUNCIL_DOCKER_COMMAND = "codecouncil-missing-docker";
+
+    try {
+      await expect(
+        runCli([
+          "--cwd",
+          repo,
+          "--json",
+          "test",
+          "--session",
+          session.id,
+          "--agents",
+          "mock-codex",
+          "--container",
+          "--command",
+          "node pass-test.mjs"
+        ])
+      ).rejects.toThrow("rerun without --container");
+    } finally {
+      if (previousDockerCommand === undefined) {
+        delete process.env.CODECOUNCIL_DOCKER_COMMAND;
+      } else {
+        process.env.CODECOUNCIL_DOCKER_COMMAND = previousDockerCommand;
+      }
+    }
+  });
+});
+
+describe("test execution safety reporting", () => {
+  it("reports containerized test execution differently from host execution", async () => {
+    const repo = await createTempGitRepo({});
+    const session = await createApprovedSession(repo, "Container safety summary");
+
+    await mkdir(session.paths.testsDir, { recursive: true });
+    await writeFile(
+      path.join(session.paths.testsDir, "summary.json"),
+      JSON.stringify(
+        {
+          summaries: [
+            {
+              commands: [
+                {
+                  executionMode: "container"
+                }
+              ]
+            }
+          ]
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const summary = await generateSafetySummary({
+      session
+    });
+
+    expect(summary.warnings).toContain(
+      "Configured test commands ran in Docker containers with the agent worktree mounted as /workspace and Docker network disabled."
+    );
+    expect(summary.warnings.join("\n")).not.toContain("execute code from agent worktrees on the host");
   });
 });
 

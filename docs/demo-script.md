@@ -85,6 +85,12 @@ Talking point: each agent gets its own branch and worktree.
 codecouncil test --session <session-id> --agents mock-codex,mock-claude
 ```
 
+Optional safer variant when the configured Docker image is available locally:
+
+```bash
+codecouncil test --session <session-id> --agents mock-codex,mock-claude --container
+```
+
 Open:
 
 ```text
