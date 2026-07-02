@@ -6,6 +6,7 @@
     "mock-codex": {
       "enabled": true,
       "command": "mock-codex",
+      "models": {},
       "planArgs": [],
       "implementArgs": [],
       "reviewArgs": [],
@@ -14,6 +15,7 @@
     "mock-claude": {
       "enabled": true,
       "command": "mock-claude",
+      "models": {},
       "planArgs": [],
       "implementArgs": [],
       "reviewArgs": [],

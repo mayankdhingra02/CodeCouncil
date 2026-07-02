@@ -37,6 +37,7 @@ describe("AgentRegistry", () => {
       gemini: {
         enabled: true,
         command: "gemini",
+        models: {},
         planArgs: [],
         implementArgs: [],
         reviewArgs: [],
@@ -57,6 +58,7 @@ describe("AgentRegistry", () => {
       codex: {
         enabled: true,
         command: "codex",
+        models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
@@ -65,6 +67,7 @@ describe("AgentRegistry", () => {
       claude: {
         enabled: true,
         command: "claude",
+        models: {},
         planArgs: ["-p", "--output-format", "stream-json"],
         implementArgs: ["-p", "--output-format", "stream-json"],
         reviewArgs: ["-p", "--output-format", "stream-json"],
@@ -167,6 +170,7 @@ describe("real CLI adapters", () => {
       codex: {
         enabled: true,
         command: "codex",
+        models: {},
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
@@ -195,6 +199,9 @@ describe("real CLI adapters", () => {
       codex: {
         enabled: true,
         command: "codex",
+        models: {
+          plan: "gpt-5.4-mini"
+        },
         planArgs: ["exec", "--json"],
         implementArgs: ["exec", "--json"],
         reviewArgs: ["exec", "--json"],
@@ -223,7 +230,7 @@ describe("real CLI adapters", () => {
     const saved = await savePlanArtifacts(session, plan);
 
     expect(runner.runs[0]).toMatchObject({
-      args: expect.arrayContaining(["exec", "--json"]),
+      args: expect.arrayContaining(["exec", "--json", "--model", "gpt-5.4-mini"]),
       command: "codex",
       cwd: rootDir,
       timeoutMs: 120000

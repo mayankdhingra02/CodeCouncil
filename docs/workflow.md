@@ -26,6 +26,7 @@ Each session stores the task, plans, worktrees, diffs, reviews, tests, scores, s
 ```bash
 codecouncil init
 codecouncil doctor
+codecouncil models list
 codecouncil plan "task" --agents codex,claude
 codecouncil approve --session <id> --agent codex
 codecouncil implement --session <id> --agents codex,claude
@@ -49,6 +50,7 @@ To continue, pass explicit flags:
 ```bash
 codecouncil solve "Add password reset flow" \
   --agents codex,claude \
+  --models codex=gpt-5.4-mini,claude=sonnet \
   --auto-approve-plan \
   --implement both \
   --run-tests \

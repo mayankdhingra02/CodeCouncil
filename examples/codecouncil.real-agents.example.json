@@ -6,6 +6,11 @@
     "codex": {
       "enabled": true,
       "command": "codex",
+      "models": {
+        "plan": "gpt-5.4-mini",
+        "implement": "gpt-5.5",
+        "review": "gpt-5.5"
+      },
       "planArgs": ["exec", "--json", "--sandbox", "read-only"],
       "implementArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json", "--sandbox", "read-only"],
@@ -14,6 +19,11 @@
     "claude": {
       "enabled": true,
       "command": "claude",
+      "models": {
+        "plan": "sonnet",
+        "implement": "opus",
+        "review": "opus"
+      },
       "planArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
       "implementArgs": ["-p", "--verbose", "--output-format", "stream-json"],
       "reviewArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],

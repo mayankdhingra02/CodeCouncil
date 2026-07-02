@@ -6,6 +6,7 @@
     "codex": {
       "enabled": true,
       "command": "codex",
+      "models": {},
       "planArgs": ["exec", "--json", "--sandbox", "read-only"],
       "implementArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json", "--sandbox", "read-only"],
@@ -14,6 +15,7 @@
     "claude": {
       "enabled": true,
       "command": "claude",
+      "models": {},
       "planArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],
       "implementArgs": ["-p", "--verbose", "--output-format", "stream-json"],
       "reviewArgs": ["-p", "--verbose", "--output-format", "stream-json", "--permission-mode", "plan"],

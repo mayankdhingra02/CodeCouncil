@@ -144,6 +144,7 @@ Next manual commands:
 ```bash
 codecouncil init
 codecouncil doctor
+codecouncil models list
 codecouncil plan "task" --agents codex,claude
 codecouncil approve --session <id> --agent codex
 codecouncil implement --session <id> --agents codex,claude
@@ -154,6 +155,19 @@ codecouncil report --session <id>
 codecouncil solve "task" --agents codex,claude
 codecouncil benchmark --tasks tasks.json --agents codex,claude --yes
 ```
+
+## Model Selection
+
+Use `codecouncil models list` to see recommended model choices before spending real-agent tokens.
+
+Set model defaults in `codecouncil.config.json`, or override per run:
+
+```bash
+codecouncil plan "task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+codecouncil review --session <id> --reviewers codex,claude --targets codex,claude --models codex=gpt-5.5,claude=fable
+```
+
+CodeCouncil passes model choices to the official CLIs. The provider CLI decides whether the selected model is available for your account.
 
 ## Safety Model
 

@@ -1,6 +1,11 @@
 import type { Command } from "commander";
 
 import { CodeCouncilError } from "../core/errors.js";
+import {
+  applyModelSelectionToConfig,
+  parseModelSelection,
+  type ModelSelection
+} from "../core/modelSelection.js";
 import { runPlanningStage } from "../workflow/planning.js";
 import { writeResult } from "./context.js";
 import {
@@ -21,6 +26,8 @@ import type {
 interface PlanOptions {
   agent?: string[];
   agents?: string;
+  model?: string[];
+  models?: string;
 }
 
 export function registerPlanCommand(program: Command): void {
@@ -30,6 +37,8 @@ export function registerPlanCommand(program: Command): void {
     .argument("[task...]", "task description to plan")
     .option("-a, --agent <agent>", "agent id to include; repeat for multiple agents", collectRepeatableOption)
     .option("--agents <agents>", "comma-separated agent ids to include")
+    .option("-m, --model <model>", "model override for this planning run; use agent=model for one agent", collectRepeatableOption)
+    .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5,claude=sonnet")
     .action(async (taskWords: string[] | undefined, options: PlanOptions, command: Command) => {
       const task = joinTaskWords(taskWords);
 
@@ -42,9 +51,18 @@ export function registerPlanCommand(program: Command): void {
 
       const runtime = await loadRuntimeContext(command);
       const selectedAgentIds = [...(options.agent ?? []), ...parseAgentsOption(options.agents)];
+      const modelSelection = parseModelSelection({
+        model: options.model,
+        models: options.models
+      });
+      const config = applyModelSelectionToConfig(
+        runtime.loadedConfig.config,
+        modelSelection,
+        "plan"
+      );
       const planning = await runPlanningStage({
         agentIds: selectedAgentIds,
-        config: runtime.loadedConfig.config,
+        config,
         repoRoot: runtime.loadedConfig.rootDir,
         task
       });
@@ -60,6 +78,7 @@ export function registerPlanCommand(program: Command): void {
           config: formatConfigSource(runtime.loadedConfig),
           cwd: runtime.commandContext.cwd,
           ignorePatterns: runtime.ignore.patterns.length,
+          modelSelection,
           plans: planning.plans,
           sessionDir: planning.session.paths.sessionDir,
           sessionId: planning.session.id,
@@ -70,6 +89,7 @@ export function registerPlanCommand(program: Command): void {
           artifacts: planning.artifacts,
           comparison: planning.comparison,
           comparisonArtifact: planning.comparisonArtifact,
+          modelSelection,
           plans: planning.plans,
           sessionDir: relativeToCwd(runtime.commandContext, planning.session.paths.sessionDir),
           sessionId: planning.session.id,
@@ -83,6 +103,7 @@ function formatPlanOutputLines(input: {
   artifacts: readonly SavedPlanArtifact[];
   comparison: PlanComparison;
   comparisonArtifact: SavedComparisonArtifact;
+  modelSelection: ModelSelection;
   plans: readonly PlanOutput[];
   sessionDir: string;
   sessionId: string;
@@ -93,6 +114,7 @@ function formatPlanOutputLines(input: {
     `Task: ${input.task}`,
     `Session: ${input.sessionId}`,
     `Session dir: ${input.sessionDir}`,
+    ...formatModelSelectionLines(input.modelSelection),
     "",
     "Plans:",
     ...input.plans.map((plan) => {
@@ -122,4 +144,19 @@ function formatListItems(items: readonly string[]): string[] {
   }
 
   return items.map((item) => `- ${item}`);
+}
+
+function formatModelSelectionLines(selection: ModelSelection): string[] {
+  const assignments = Object.entries(selection.byAgent);
+
+  if (!selection.defaultModel && assignments.length === 0) {
+    return [];
+  }
+
+  return [
+    `Model override: ${[
+      selection.defaultModel ? `default=${selection.defaultModel}` : "",
+      ...assignments.map(([agentId, model]) => `${agentId}=${model}`)
+    ].filter(Boolean).join(", ")}`
+  ];
 }

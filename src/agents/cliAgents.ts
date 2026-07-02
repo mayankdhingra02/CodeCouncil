@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { AgentConfig, AgentId } from "../config/schema.js";
 import { CodeCouncilError } from "../core/errors.js";
+import { getAgentStageModel, injectModelArg } from "../core/modelSelection.js";
 import {
   buildImplementationOutputFromCommand,
   buildPlanOutputFromCommand,
@@ -74,7 +75,7 @@ export class CliAgent implements CodeCouncilAgent {
   public async generatePlan(input: PlanInput): Promise<PlanOutput> {
     const prompt = createPlanningPrompt(input);
     const result = await this.runner.run({
-      args: [...this.config.planArgs, prompt],
+      args: [...injectModelArg(this.config.planArgs, getAgentStageModel(this.config, "plan")), prompt],
       command: this.config.command,
       cwd: input.repoRoot,
       timeoutMs: this.config.maxRuntimeSeconds * 1000
@@ -100,7 +101,7 @@ export class CliAgent implements CodeCouncilAgent {
 
     const prompt = createImplementationPrompt(input);
     const result = await this.runner.run({
-      args: [...this.config.implementArgs, prompt],
+      args: [...injectModelArg(this.config.implementArgs, getAgentStageModel(this.config, "implement")), prompt],
       command: this.config.command,
       cwd: input.worktreePath,
       timeoutMs: this.config.maxRuntimeSeconds * 1000
@@ -116,7 +117,7 @@ export class CliAgent implements CodeCouncilAgent {
   public async reviewDiff(input: ReviewInput): Promise<ReviewOutput> {
     const prompt = createReviewPrompt(input);
     const result = await this.runner.run({
-      args: [...this.config.reviewArgs, prompt],
+      args: [...injectModelArg(this.config.reviewArgs, getAgentStageModel(this.config, "review")), prompt],
       command: this.config.command,
       cwd: input.repoRoot,
       timeoutMs: this.config.maxRuntimeSeconds * 1000

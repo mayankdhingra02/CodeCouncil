@@ -22,6 +22,15 @@ export const agentConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
     command: z.string().min(1, "Agent command is required."),
+    model: z.string().min(1).optional(),
+    models: z
+      .object({
+        plan: z.string().min(1).optional(),
+        implement: z.string().min(1).optional(),
+        review: z.string().min(1).optional()
+      })
+      .strict()
+      .default({}),
     planArgs: z.array(z.string()).default([]),
     implementArgs: z.array(z.string()).default([]),
     reviewArgs: z.array(z.string()).default([]),

@@ -6,6 +6,7 @@ import { registerBenchmarkCommand } from "./benchmark.js";
 import { registerDoctorCommand } from "./doctor.js";
 import { registerImplementCommand } from "./implement.js";
 import { registerInitCommand } from "./init.js";
+import { registerModelsCommand } from "./models.js";
 import { registerPlanCommand } from "./plan.js";
 import { registerReportCommand } from "./report.js";
 import { registerReviewCommand } from "./review.js";
@@ -21,6 +22,7 @@ export function registerCommands(program: Command): void {
   registerApplyCommand(program);
   registerApproveCommand(program);
   registerBenchmarkCommand(program);
+  registerModelsCommand(program);
   registerPlanCommand(program);
   registerSolveCommand(program);
   registerImplementCommand(program);

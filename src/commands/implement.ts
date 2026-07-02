@@ -4,6 +4,11 @@ import type { Command } from "commander";
 import { AgentRegistry, type CodeCouncilAgent, type ImplementationOutput } from "../agents/index.js";
 import type { AgentId, CodeCouncilConfig } from "../config/schema.js";
 import { CodeCouncilError } from "../core/errors.js";
+import {
+  applyModelSelectionToConfig,
+  parseModelSelection,
+  type ModelSelection
+} from "../core/modelSelection.js";
 import { GitManager } from "../git/index.js";
 import { saveImplementationArtifacts } from "../implementation/index.js";
 import { classifyChangedFiles, type FileChangeSafetyResult } from "../safety/index.js";
@@ -27,6 +32,8 @@ interface ImplementOptions {
   agent?: string[];
   agents?: string;
   fromPlan?: string;
+  model?: string[];
+  models?: string;
   noApprovalRequired?: boolean;
   session?: string;
 }
@@ -49,6 +56,8 @@ export function registerImplementCommand(program: Command): void {
     .option("-a, --agent <agent>", "agent id to include; repeat for multiple agents", collectRepeatableOption)
     .option("--agents <agents>", "comma-separated agent ids to include")
     .option("--from-plan <path>", "path to a saved plan file from a previous run")
+    .option("-m, --model <model>", "model override for this implementation run; use agent=model for one agent", collectRepeatableOption)
+    .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5,claude=opus")
     .option("--session <id>", "session id containing an approved plan")
     .option("--no-approval-required", "explicitly bypass the approved-plan requirement")
     .action(
@@ -63,6 +72,15 @@ export function registerImplementCommand(program: Command): void {
         }
 
         const runtime = await loadRuntimeContext(command);
+        const modelSelection = parseModelSelection({
+          model: options.model,
+          models: options.models
+        });
+        const config = applyModelSelectionToConfig(
+          runtime.loadedConfig.config,
+          modelSelection,
+          "implement"
+        );
 
         if (!options.session) {
           throw new CodeCouncilError("Implementation requires --session for isolated worktree execution.", {
@@ -88,7 +106,7 @@ export function registerImplementCommand(program: Command): void {
           );
         }
 
-        const registry = AgentRegistry.fromConfig(runtime.loadedConfig.config);
+        const registry = AgentRegistry.fromConfig(config);
         const selectedAgents = registry.select([
           ...(options.agent ?? []),
           ...parseAgentsOption(options.agents)
@@ -122,9 +140,9 @@ export function registerImplementCommand(program: Command): void {
         for (const agent of selectedAgents) {
           const summary = await implementWithAgent({
             agent,
-            baseBranch: runtime.loadedConfig.config.baseBranch,
-            config: runtime.loadedConfig.config,
-            createCommit: runtime.loadedConfig.config.safety.createCommitOnImplementation,
+            baseBranch: config.baseBranch,
+            config,
+            createCommit: config.safety.createCommitOnImplementation,
             git,
             ignoreMatcher: runtime.ignore,
             repoRoot: runtime.loadedConfig.rootDir,
@@ -167,6 +185,7 @@ export function registerImplementCommand(program: Command): void {
             command: "implement",
             config: formatConfigSource(runtime.loadedConfig),
             fromPlan: options.fromPlan,
+            modelSelection,
             sessionId: session.id,
             status: "success",
             summaries,
@@ -186,6 +205,7 @@ export function registerImplementCommand(program: Command): void {
               `  Metadata: ${relativeToCwd(runtime.commandContext, summary.implementationJsonPath)}`
             ]),
             "",
+            ...formatModelSelectionLines(modelSelection),
             runtime.loadedConfig.config.testCommands.length > 0
               ? `Next: codecouncil test --worktree <path> --command "${runtime.loadedConfig.config.testCommands[0]}"`
               : "Next: run tests in the selected worktree, then request review."
@@ -350,4 +370,20 @@ function parseAgentsOption(value: string | undefined): AgentId[] {
     .split(",")
     .map((agentId) => agentId.trim())
     .filter(Boolean);
+}
+
+function formatModelSelectionLines(selection: ModelSelection): string[] {
+  const assignments = Object.entries(selection.byAgent);
+
+  if (!selection.defaultModel && assignments.length === 0) {
+    return [];
+  }
+
+  return [
+    "",
+    `Model override: ${[
+      selection.defaultModel ? `default=${selection.defaultModel}` : "",
+      ...assignments.map(([agentId, model]) => `${agentId}=${model}`)
+    ].filter(Boolean).join(", ")}`
+  ];
 }

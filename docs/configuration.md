@@ -25,6 +25,7 @@ Fallback legacy name:
     "mock-codex": {
       "enabled": true,
       "command": "mock-codex",
+      "models": {},
       "planArgs": [],
       "implementArgs": [],
       "reviewArgs": [],
@@ -33,6 +34,7 @@ Fallback legacy name:
     "mock-claude": {
       "enabled": true,
       "command": "mock-claude",
+      "models": {},
       "planArgs": [],
       "implementArgs": [],
       "reviewArgs": [],
@@ -65,6 +67,11 @@ CodeCouncil calls configured commands through child processes. It does not read 
     "codex": {
       "enabled": true,
       "command": "codex",
+      "models": {
+        "plan": "gpt-5.4-mini",
+        "implement": "gpt-5.5",
+        "review": "gpt-5.5"
+      },
       "planArgs": ["exec", "--json"],
       "implementArgs": ["exec", "--json"],
       "reviewArgs": ["exec", "--json"],
@@ -73,6 +80,11 @@ CodeCouncil calls configured commands through child processes. It does not read 
     "claude": {
       "enabled": true,
       "command": "claude",
+      "models": {
+        "plan": "sonnet",
+        "implement": "opus",
+        "review": "opus"
+      },
       "planArgs": ["-p", "--output-format", "stream-json"],
       "implementArgs": ["-p", "--output-format", "stream-json"],
       "reviewArgs": ["-p", "--output-format", "stream-json"],
@@ -83,6 +95,34 @@ CodeCouncil calls configured commands through child processes. It does not read 
 ```
 
 CodeCouncil appends its generated prompt as the final argument after the configured args.
+
+## Model Selection
+
+Each agent can define a default `model` or stage-specific `models`.
+
+```json
+{
+  "agents": {
+    "codex": {
+      "command": "codex",
+      "model": "gpt-5.4-mini",
+      "models": {
+        "implement": "gpt-5.5"
+      }
+    }
+  }
+}
+```
+
+Stage-specific values win over `model`. CLI flags win over config:
+
+```bash
+codecouncil models list
+codecouncil plan "task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+codecouncil implement --session <id> --agent claude --model claude=opus
+```
+
+CodeCouncil passes the selected value to the official CLI as `--model`; it does not validate account-specific model access itself.
 
 ## Ignore Rules
 

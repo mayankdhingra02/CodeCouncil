@@ -94,3 +94,10 @@ Then configure `codex` and/or `claude` in `codecouncil.config.json` and run:
 ```bash
 codecouncil plan "your task" --agents codex,claude
 ```
+
+Before a real-agent run, inspect and choose model/cost tradeoffs:
+
+```bash
+codecouncil models list
+codecouncil plan "your task" --agents codex,claude --models codex=gpt-5.4-mini,claude=sonnet
+```

@@ -3,6 +3,12 @@ import path from "node:path";
 import type { Command } from "commander";
 
 import { CodeCouncilError } from "../core/errors.js";
+import {
+  applyModelSelectionToConfig,
+  formatModelSelectionArgs,
+  parseModelSelection,
+  type ModelSelection
+} from "../core/modelSelection.js";
 import { runDoctorChecks, type DoctorCheck } from "./doctor.js";
 import { runPlanningStage, type PlanningStageResult } from "../workflow/planning.js";
 import {
@@ -25,6 +31,7 @@ import {
 } from "../session/index.js";
 import { writeResult } from "./context.js";
 import {
+  collectRepeatableOption,
   formatConfigSource,
   joinTaskWords,
   loadRuntimeContext,
@@ -41,6 +48,8 @@ interface SolveOptions {
   dryRun?: boolean;
   implement?: string;
   maxDuration?: string;
+  model?: string[];
+  models?: string;
   report?: boolean;
   review?: boolean;
   runTests?: boolean;
@@ -67,6 +76,8 @@ export function registerSolveCommand(program: Command): void {
     .option("--auto-approve-plan", "approve the suggested agent plan after comparison")
     .option("--approved-plan <file>", "markdown file to use as the approved plan")
     .option("--implement <agent|both>", "implementation agent id, comma-separated ids, or both")
+    .option("-m, --model <model>", "model override for this solve run; use agent=model for one agent", collectRepeatableOption)
+    .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5,claude=sonnet")
     .option("--run-tests", "run the test phase after implementation")
     .option("--review", "run cross-agent review after implementation")
     .option("--report", "generate a final report after requested stages")
@@ -93,6 +104,12 @@ export function registerSolveCommand(program: Command): void {
 
       const runtime = await loadRuntimeContext(command);
       const selectedAgentIds = parseAgentsOption(options.agents);
+      const modelSelection = parseModelSelection({
+        model: options.model,
+        models: options.models
+      });
+      const config = applyModelSelectionToConfig(runtime.loadedConfig.config, modelSelection);
+      const modelArgs = formatModelSelectionArgs(modelSelection);
       const deadlineMs = parseMaxDurationDeadline(options.maxDuration);
       const plannedStages = buildPlannedStages(options);
 
@@ -104,6 +121,7 @@ export function registerSolveCommand(program: Command): void {
             command: "solve",
             config: formatConfigSource(runtime.loadedConfig),
             dryRun: true,
+            modelSelection,
             plannedStages,
             status: "dry-run",
             task
@@ -112,6 +130,7 @@ export function registerSolveCommand(program: Command): void {
             "Solve dry run.",
             `Task: ${task}`,
             `Agents: ${selectedAgentIds.length > 0 ? selectedAgentIds.join(", ") : "enabled agents"}`,
+            ...formatModelSelectionLines(modelSelection),
             `Stages: ${plannedStages.join(" -> ")}`,
             "No session was created and no agents were executed."
           ]
@@ -124,7 +143,7 @@ export function registerSolveCommand(program: Command): void {
 
       try {
         session = await createTaskSession({
-          config: runtime.loadedConfig.config,
+          config,
           rootDir: runtime.loadedConfig.rootDir,
           task
         });
@@ -138,8 +157,8 @@ export function registerSolveCommand(program: Command): void {
         assertWithinDeadline(deadlineMs, currentStage);
         const doctorChecks = await runDoctorChecks({
           rootDir: runtime.loadedConfig.rootDir,
-          testCommands: runtime.loadedConfig.config.testCommands,
-          workspaceDir: runtime.loadedConfig.config.workspaceDir
+          testCommands: config.testCommands,
+          workspaceDir: config.workspaceDir
         });
         await appendSessionEvent(session, {
           type: "workflow.doctor.completed",
@@ -154,7 +173,7 @@ export function registerSolveCommand(program: Command): void {
         assertWithinDeadline(deadlineMs, currentStage);
         const planning = await runPlanningStage({
           agentIds: selectedAgentIds,
-          config: runtime.loadedConfig.config,
+          config,
           ...(deadlineMs ? { deadlineMs } : {}),
           repoRoot: runtime.loadedConfig.rootDir,
           session,
@@ -214,7 +233,8 @@ export function registerSolveCommand(program: Command): void {
             "--session",
             session.id,
             "--agents",
-            implementationAgents.join(",")
+            implementationAgents.join(","),
+            ...modelArgs
           ]);
           artifacts = await collectWorkflowArtifacts(session);
           await saveWorkflowState(session, {
@@ -256,7 +276,8 @@ export function registerSolveCommand(program: Command): void {
             "--reviewers",
             implementationAgents.join(","),
             "--targets",
-            implementationAgents.join(",")
+            implementationAgents.join(","),
+            ...modelArgs
           ]);
           artifacts = await collectWorkflowArtifacts(session);
           await saveWorkflowState(session, {
@@ -307,6 +328,7 @@ export function registerSolveCommand(program: Command): void {
             command: "solve",
             config: formatConfigSource(runtime.loadedConfig),
             doctorChecks,
+            modelSelection,
             sessionDir: session.paths.sessionDir,
             sessionId: session.id,
             skippedStages,
@@ -324,7 +346,8 @@ export function registerSolveCommand(program: Command): void {
             skippedStages,
             suggestedApproval,
             workflow: finalWorkflow,
-            cwd: runtime.commandContext.cwd
+            cwd: runtime.commandContext.cwd,
+            modelSelection
           })
         );
       } catch (error) {
@@ -583,6 +606,7 @@ function formatSolveOutputLines(input: {
   approvalArtifacts?: ApprovalArtifacts;
   cwd: string;
   doctorChecks: readonly DoctorCheck[];
+  modelSelection: ModelSelection;
   session: TaskSession;
   skippedStages: readonly string[];
   suggestedApproval: SuggestedApprovalArtifacts;
@@ -594,6 +618,7 @@ function formatSolveOutputLines(input: {
     `Current state: ${input.workflow.status}`,
     `Session dir: ${path.relative(input.cwd, input.session.paths.sessionDir) || "."}`,
     `Doctor: ${summarizeDoctorChecks(input.doctorChecks)}`,
+    ...formatModelSelectionLines(input.modelSelection),
     `Suggested plan: ${path.relative(input.cwd, input.suggestedApproval.markdownPath)}`,
     input.approvalArtifacts
       ? `Approved plan: ${path.relative(input.cwd, input.approvalArtifacts.markdownPath)}`
@@ -605,6 +630,21 @@ function formatSolveOutputLines(input: {
     ...(input.skippedStages.length > 0 ? ["", "Skipped stages:", ...input.skippedStages.map((stage) => `- ${stage}`)] : []),
     "",
     `Next: ${input.workflow.nextRecommendedCommand ?? suggestNextCommand(input.session, input.workflow.status, input.workflow.artifacts)}`
+  ];
+}
+
+function formatModelSelectionLines(selection: ModelSelection): string[] {
+  const assignments = Object.entries(selection.byAgent);
+
+  if (!selection.defaultModel && assignments.length === 0) {
+    return [];
+  }
+
+  return [
+    `Model override: ${[
+      selection.defaultModel ? `default=${selection.defaultModel}` : "",
+      ...assignments.map(([agentId, model]) => `${agentId}=${model}`)
+    ].filter(Boolean).join(", ")}`
   ];
 }
 

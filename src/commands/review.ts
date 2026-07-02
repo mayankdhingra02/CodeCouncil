@@ -5,6 +5,11 @@ import type { Command } from "commander";
 import { AgentRegistry, type CodeCouncilAgent, type ReviewOutput, reviewOutputSchema } from "../agents/index.js";
 import type { AgentId, CodeCouncilConfig } from "../config/schema.js";
 import { CodeCouncilError, isErrnoException } from "../core/errors.js";
+import {
+  applyModelSelectionToConfig,
+  parseModelSelection,
+  type ModelSelection
+} from "../core/modelSelection.js";
 import { resolveSelectedAgents, type SelectedAgentConfig } from "../core/agentSelection.js";
 import {
   aggregateReviews,
@@ -34,6 +39,8 @@ import {
 } from "./shared.js";
 
 interface ReviewOptions {
+  model?: string[];
+  models?: string;
   reviewer?: string[];
   reviewers?: string;
   selfReview?: boolean;
@@ -90,6 +97,8 @@ export function registerReviewCommand(program: Command): void {
     .description("Run cross-agent reviews for implementation diffs.")
     .option("--reviewer <agent>", "reviewer agent id; repeat for multiple reviewers", collectRepeatableOption)
     .option("--reviewers <agents>", "comma-separated reviewer agent ids")
+    .option("-m, --model <model>", "model override for this review run; use agent=model for one agent", collectRepeatableOption)
+    .option("--models <models>", "comma-separated model overrides, for example codex=gpt-5.5,claude=opus")
     .option("--target <agent>", "target agent id; repeat for multiple targets", collectRepeatableOption)
     .option("--targets <agents>", "comma-separated target agent ids")
     .option("--session <id>", "session id containing implementation diffs")
@@ -109,12 +118,21 @@ export function registerReviewCommand(program: Command): void {
         sessionId: options.session,
         workspaceDir: runtime.loadedConfig.config.workspaceDir
       });
-      const registry = AgentRegistry.fromConfig(runtime.loadedConfig.config);
-      const reviewerAgents = selectAgents(runtime.loadedConfig.config, [
+      const modelSelection = parseModelSelection({
+        model: options.model,
+        models: options.models
+      });
+      const config = applyModelSelectionToConfig(
+        runtime.loadedConfig.config,
+        modelSelection,
+        "review"
+      );
+      const registry = AgentRegistry.fromConfig(config);
+      const reviewerAgents = selectAgents(config, [
         ...(options.reviewer ?? []),
         ...parseAgentsOption(options.reviewers)
       ]);
-      const targetAgents = selectAgents(runtime.loadedConfig.config, [
+      const targetAgents = selectAgents(config, [
         ...(options.target ?? []),
         ...parseAgentsOption(options.targets)
       ]);
@@ -139,7 +157,7 @@ export function registerReviewCommand(program: Command): void {
           target.id,
           await buildTargetReviewContext({
             ...(approvedPlanMarkdown ? { approvedPlanMarkdown } : {}),
-            config: runtime.loadedConfig.config,
+            config,
             session,
             target,
             rootDir: runtime.loadedConfig.rootDir
@@ -172,7 +190,7 @@ export function registerReviewCommand(program: Command): void {
         }
 
         const review = await runReviewPair({
-          config: runtime.loadedConfig.config,
+          config,
           pair,
           repoRoot: runtime.loadedConfig.rootDir,
           reviewer,
@@ -234,6 +252,7 @@ export function registerReviewCommand(program: Command): void {
         {
           command: "review",
           config: formatConfigSource(runtime.loadedConfig),
+          modelSelection,
           pairs,
           reviewSummaryPath: savedReviewSummary.jsonPath,
           scores,
@@ -248,6 +267,7 @@ export function registerReviewCommand(program: Command): void {
           "",
           ...renderCliTable(cliSummaries),
           "",
+          ...formatModelSelectionLines(modelSelection),
           `Review summary: ${relativeToCwd(runtime.commandContext, savedReviewSummary.markdownPath)}`,
           `Scores: ${relativeToCwd(runtime.commandContext, savedScores.markdownPath)}`
         ]
@@ -540,6 +560,21 @@ function parseAgentsOption(value: string | undefined): AgentId[] {
     .split(",")
     .map((agentId) => agentId.trim())
     .filter(Boolean);
+}
+
+function formatModelSelectionLines(selection: ModelSelection): string[] {
+  const assignments = Object.entries(selection.byAgent);
+
+  if (!selection.defaultModel && assignments.length === 0) {
+    return [];
+  }
+
+  return [
+    `Model override: ${[
+      selection.defaultModel ? `default=${selection.defaultModel}` : "",
+      ...assignments.map(([agentId, model]) => `${agentId}=${model}`)
+    ].filter(Boolean).join(", ")}`
+  ];
 }
 
 function asStringArray(value: unknown): string[] {
