@@ -3,20 +3,20 @@
   "baseBranch": "main",
   "workspaceDir": ".codecouncil",
   "agents": {
-    "mock-codex": {
+    "codex": {
       "enabled": true,
-      "command": "mock-codex",
-      "planArgs": [],
-      "implementArgs": [],
-      "reviewArgs": [],
+      "command": "codex",
+      "planArgs": ["exec", "--json"],
+      "implementArgs": ["exec", "--json"],
+      "reviewArgs": ["exec", "--json"],
       "maxRuntimeSeconds": 900
     },
-    "mock-claude": {
+    "claude": {
       "enabled": true,
-      "command": "mock-claude",
-      "planArgs": [],
-      "implementArgs": [],
-      "reviewArgs": [],
+      "command": "claude",
+      "planArgs": ["-p", "--output-format", "stream-json"],
+      "implementArgs": ["-p", "--output-format", "stream-json"],
+      "reviewArgs": ["-p", "--output-format", "stream-json"],
       "maxRuntimeSeconds": 900
     }
   },
