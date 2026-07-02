@@ -47,7 +47,7 @@ export class ExecaAgentCommandRunner implements AgentCommandRunner {
         reject: false,
         shell: false,
         timeout: options.timeoutMs,
-        ...(options.input === undefined ? {} : { input: options.input })
+        ...(options.input === undefined ? { stdin: "ignore" as const } : { input: options.input })
       };
       const result = await execa(options.command, [...options.args], {
         ...execaOptions
