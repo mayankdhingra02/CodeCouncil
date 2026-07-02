@@ -116,7 +116,7 @@ Review adapters receive the original task, approved plan, target agent, changed 
 - Require a git repository.
 - Warn when the main repository has uncommitted changes.
 - Create one worktree per agent implementation.
-- Create branches named `codecouncil/<session-slug>/<agent-id>`.
+- Create branches named `codecouncil/<session-id>/<agent-id>` so repeated runs of the same task do not collide.
 - Keep generated artifacts under `.codecouncil/`.
 - Refuse worktree cleanup paths outside the CodeCouncil workspace.
 - Apply config `ignore` patterns and `.codecouncilignore` when collecting context.

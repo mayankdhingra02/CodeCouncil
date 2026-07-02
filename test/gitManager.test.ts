@@ -57,7 +57,7 @@ describe("GitManager", () => {
     expect(result).toMatchObject({
       agentId: "codex",
       baseBranch: "main",
-      branchName: "codecouncil/add-payments-cache/codex",
+      branchName: "codecouncil/20260701-123456-add-payments-cache/codex",
       dryRun: false,
       worktreePath: path.join(session.paths.worktreesDir, "codex")
     });
@@ -69,7 +69,7 @@ describe("GitManager", () => {
     expect(worktrees).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          branch: "codecouncil/add-payments-cache/codex",
+          branch: "codecouncil/20260701-123456-add-payments-cache/codex",
           path: result.worktreePath
         })
       ])
@@ -103,6 +103,31 @@ describe("GitManager", () => {
   it("sanitizes agent branch names", () => {
     expect(createAgentBranchName("Feature: AMAZING!!", "Codex Agent!")).toBe(
       "codecouncil/feature-amazing/codex-agent"
+    );
+  });
+
+  it("uses session ids for repeat task branch names", () => {
+    const config = createDefaultConfig({
+      projectName: "git-test"
+    });
+    const firstSession = previewTaskSession({
+      config,
+      rootDir: "/tmp/repo",
+      task: "Add payments cache",
+      now: new Date("2026-07-01T12:34:56.000Z")
+    });
+    const secondSession = previewTaskSession({
+      config,
+      rootDir: "/tmp/repo",
+      task: "Add payments cache",
+      now: new Date("2026-07-01T12:35:56.000Z")
+    });
+
+    expect(createAgentBranchName(firstSession.id, "codex")).toBe(
+      "codecouncil/20260701-123456-add-payments-cache/codex"
+    );
+    expect(createAgentBranchName(secondSession.id, "codex")).toBe(
+      "codecouncil/20260701-123556-add-payments-cache/codex"
     );
   });
 

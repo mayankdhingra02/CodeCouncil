@@ -22,7 +22,7 @@ index 6a831b0..6d7d2da 100644
      errors,
      ok: errors.length === 0
 diff --git a/test/signup.test.mjs b/test/signup.test.mjs
-index ad5352b..eccb383 100644
+index ad5352b..7b1ef6a 100644
 --- a/test/signup.test.mjs
 +++ b/test/signup.test.mjs
 @@ -7,7 +7,7 @@ describe("signup validation", () => {
@@ -30,7 +30,7 @@ index ad5352b..eccb383 100644
      assert.deepEqual(validateSignup({
        email: "maya@example.com",
 -      password: "correct horse"
-+      password: "Correct1Horse"
++      password: "Correct horse 1"
      }), {
        errors: [],
        ok: true
@@ -39,41 +39,47 @@ index ad5352b..eccb383 100644
      const response = createSignupPayload({
        email: "invalid",
 -      password: "short"
-+      password: "A1short"
++      password: "Aa1xxxx"
      });
  
      assert.equal(response.status, 400);
-@@ -26,4 +26,34 @@ describe("signup validation", () => {
+@@ -26,4 +26,40 @@ describe("signup validation", () => {
        "password must be at least 8 characters"
      ]);
    });
 +
-+  it("rejects passwords missing an uppercase letter", () => {
++  it("rejects a password missing an uppercase letter", () => {
 +    assert.deepEqual(validateSignup({
 +      email: "maya@example.com",
-+      password: "lowercase1"
++      password: "correct horse 1"
 +    }), {
-+      errors: ["password must contain an uppercase letter"],
++      errors: [
++        "password must contain an uppercase letter"
++      ],
 +      ok: false
 +    });
 +  });
 +
-+  it("rejects passwords missing a lowercase letter", () => {
++  it("rejects a password missing a lowercase letter", () => {
 +    assert.deepEqual(validateSignup({
 +      email: "maya@example.com",
-+      password: "UPPERCASE1"
++      password: "CORRECT HORSE 1"
 +    }), {
-+      errors: ["password must contain a lowercase letter"],
++      errors: [
++        "password must contain a lowercase letter"
++      ],
 +      ok: false
 +    });
 +  });
 +
-+  it("rejects passwords missing a number", () => {
++  it("rejects a password missing a number", () => {
 +    assert.deepEqual(validateSignup({
 +      email: "maya@example.com",
-+      password: "NoNumbersHere"
++      password: "Correct horse"
 +    }), {
-+      errors: ["password must contain a number"],
++      errors: [
++        "password must contain a number"
++      ],
 +      ok: false
 +    });
 +  });

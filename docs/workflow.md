@@ -101,7 +101,7 @@ Implementation creates one branch and worktree per agent:
 
 ```text
 .codecouncil/runs/<session-id>/worktrees/<agent-id>/
-codecouncil/<session-slug>/<agent-id>
+codecouncil/<session-id>/<agent-id>
 ```
 
 CodeCouncil does not merge, push, or apply these branches automatically.

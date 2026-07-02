@@ -1,8 +1,8 @@
 # CodeCouncil Final Report
 
-Session: `20260702-040811-add-password-complexity-validation-and-tests-for`
+Session: `20260702-170202-add-password-complexity-validation-and-tests-for`
 Project: `codecouncil-demo-repo`
-Generated: 2026-07-02T04:16:11.082Z
+Generated: 2026-07-02T17:17:27.154Z
 
 ## Task Summary
 
@@ -19,7 +19,7 @@ and number requirements.
 | Agent | Status | Score | Tests | Reviews | Diff Size |
 | --- | --- | ---: | --- | --- | ---: |
 | `claude` | success | 100 | passed | 1/1 approve | 2.2 KiB |
-| `codex` | success | 85 | passed | 1/1 approve | 2.2 KiB |
+| `codex` | success | 94 | passed | 1/1 approve | 2.2 KiB |
 
 ## Changed Files
 
@@ -32,15 +32,15 @@ Both agents changed:
 
 | Agent | Command | Status | Duration |
 | --- | --- | --- | ---: |
-| `codex` | `npm test` | passed | 182ms |
-| `claude` | `npm test` | passed | 131ms |
+| `codex` | `npm test` | passed | 179ms |
+| `claude` | `npm test` | passed | 135ms |
 
 ## Review Results
 
 | Target | Reviewer | Verdict | Blocking | Security | Missing Tests |
 | --- | --- | --- | ---: | ---: | ---: |
 | `claude` | `codex` | approve | 0 | 0 | 0 |
-| `codex` | `claude` | approve | 0 | 1 | 3 |
+| `codex` | `claude` | approve | 0 | 0 | 2 |
 
 ## Safety Warnings
 
@@ -67,7 +67,7 @@ Inspect Claude's worktree first.
 The real report included local absolute paths. Sanitized equivalents:
 
 ```bash
-cd examples/demo-repo/.codecouncil/runs/20260702-040811-add-password-complexity-validation-and-tests-for/worktrees/claude
+cd examples/demo-repo/.codecouncil/runs/20260702-170202-add-password-complexity-validation-and-tests-for/worktrees/claude
 git status
 git diff main --
 ```
@@ -75,13 +75,13 @@ git diff main --
 Dry-run helper:
 
 ```bash
-node dist/cli.js --cwd examples/demo-repo apply --session 20260702-040811-add-password-complexity-validation-and-tests-for --agent claude --dry-run
+node dist/cli.js --cwd examples/demo-repo apply --session 20260702-170202-add-password-complexity-validation-and-tests-for --agent claude --dry-run
 ```
 
 Manual merge after inspection:
 
 ```bash
-git merge --no-ff codecouncil/add-password-complexity-validation-and-tests-for/claude
+git merge --no-ff codecouncil/20260702-170202-add-password-complexity-validation-and-tests-for/claude
 ```
 
 ## Known Limitations

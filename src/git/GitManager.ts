@@ -171,7 +171,7 @@ export class GitManager {
 
   public async createWorktree(options: CreateWorktreeOptions): Promise<WorktreeOperationResult> {
     const baseBranch = await this.resolveBaseBranch(options.baseBranch ?? options.session.baseBranch);
-    const branchName = createAgentBranchName(options.session.slug, options.agentId);
+    const branchName = createAgentBranchName(options.session.id, options.agentId);
     const worktreePath = getAgentWorktreePath(options.session, options.agentId);
     assertSafeWorktreeRemovalPath(worktreePath, options.session);
 
@@ -195,7 +195,7 @@ export class GitManager {
 
   public async ensureWorktree(options: CreateWorktreeOptions): Promise<WorktreeOperationResult> {
     const baseBranch = await this.resolveBaseBranch(options.baseBranch ?? options.session.baseBranch);
-    const branchName = createAgentBranchName(options.session.slug, options.agentId);
+    const branchName = createAgentBranchName(options.session.id, options.agentId);
     const worktreePath = getAgentWorktreePath(options.session, options.agentId);
     assertSafeWorktreeRemovalPath(worktreePath, options.session);
     const existingWorktree = (await this.listWorktrees()).find(
@@ -254,9 +254,13 @@ export class GitManager {
 
   public async removeWorktree(options: RemoveWorktreeOptions): Promise<WorktreeOperationResult> {
     const baseBranch = options.session.baseBranch;
-    const branchName = createAgentBranchName(options.session.slug, options.agentId);
     const worktreePath = getAgentWorktreePath(options.session, options.agentId);
     assertSafeWorktreeRemovalPath(worktreePath, options.session);
+    const existingWorktree = (await this.listWorktrees()).find(
+      (worktree) => path.resolve(worktree.path) === path.resolve(worktreePath)
+    );
+    const branchName =
+      existingWorktree?.branch ?? createAgentBranchName(options.session.id, options.agentId);
 
     const result = {
       agentId: options.agentId,

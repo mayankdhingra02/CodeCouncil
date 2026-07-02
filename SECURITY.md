@@ -57,8 +57,11 @@ CodeCouncil creates agent worktrees under:
 Agent branches are named:
 
 ```text
-codecouncil/<session-slug>/<agent-id>
+codecouncil/<session-id>/<agent-id>
 ```
+
+The session id includes a timestamp and task slug, which prevents repeated runs
+of the same task from colliding on the same branch name.
 
 Cleanup refuses to remove paths outside the CodeCouncil workspace and does not push anything to remotes. Dirty agent worktrees require explicit `--force` cleanup.
 
