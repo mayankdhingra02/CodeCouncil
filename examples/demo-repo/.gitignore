@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+.env
+.env.*
+.codecouncil/
+.DS_Store
