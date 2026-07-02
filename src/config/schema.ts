@@ -75,6 +75,7 @@ export const codeCouncilConfigSchema = z
     testContainer: z
       .object({
         image: z.string().min(1).default("node:20-bookworm-slim"),
+        setupCommands: z.array(z.string().min(1)).default([]),
         timeoutSeconds: z.number().int().positive().default(600)
       })
       .strict()

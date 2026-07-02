@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
@@ -14,7 +14,12 @@ import {
   createTaskSession,
   type TaskSession
 } from "../src/session/index.js";
-import { buildDockerRunArgs, detectProjectTypes, selectTestCommands } from "../src/testing/index.js";
+import {
+  buildDockerRunArgs,
+  detectProjectTypes,
+  runContainerizedTestCommand,
+  selectTestCommands
+} from "../src/testing/index.js";
 
 describe("test detection", () => {
   it("detects supported project types and default test commands", async () => {
@@ -86,22 +91,32 @@ describe("test runner CLI", () => {
       buildDockerRunArgs({
         command: "npm",
         commandArgs: ["test"],
+        containerName: "codecouncil-test-demo",
         image: "node:20-bookworm-slim",
-        mountPath: "/tmp/worktree"
+        mountPath: "/tmp/worktree",
+        network: "none",
+        user: "501:20"
       })
     ).toEqual([
       "run",
       "--rm",
       "--pull",
       "never",
+      "--init",
+      "--name",
+      "codecouncil-test-demo",
       "--network",
       "none",
+      "--user",
+      "501:20",
       "--workdir",
       "/workspace",
       "--volume",
       "/tmp/worktree:/workspace",
       "--env",
       "CI=1",
+      "--env",
+      "HOME=/tmp",
       "node:20-bookworm-slim",
       "npm",
       "test"
@@ -249,6 +264,111 @@ describe("test runner CLI", () => {
         process.env.CODECOUNCIL_DOCKER_COMMAND = previousDockerCommand;
       }
     }
+  });
+
+  it("runs explicit container setup before offline container tests and saves separate logs", async () => {
+    const repo = await createTempGitRepo({
+      "pass-test.mjs": "console.log('pass ok');\n"
+    });
+    const session = await createApprovedSession(repo, "Container setup");
+    const fakeDocker = await createFakeDocker();
+    const previousDockerCommand = process.env.CODECOUNCIL_DOCKER_COMMAND;
+
+    await runCli([
+      "--cwd",
+      repo,
+      "implement",
+      "--session",
+      session.id,
+      "--agents",
+      "mock-codex"
+    ]);
+
+    process.env.CODECOUNCIL_DOCKER_COMMAND = fakeDocker.commandPath;
+
+    try {
+      const stdout = await runCli([
+        "--cwd",
+        repo,
+        "--json",
+        "test",
+        "--session",
+        session.id,
+        "--agents",
+        "mock-codex",
+        "--container",
+        "--container-image",
+        "node:fake",
+        "--container-setup-command",
+        "node setup.js",
+        "--command",
+        "node pass-test.mjs"
+      ]);
+      const payload = JSON.parse(stdout) as {
+        executionMode: string;
+        status: string;
+        summaries: Array<{ setupCommands: string[]; testsPassed: boolean; testsRun: boolean }>;
+      };
+      const summary = JSON.parse(
+        await readFile(path.join(session.paths.testsDir, "mock-codex", "summary.json"), "utf8")
+      ) as {
+        commands: Array<{ container: { network: string }; phase: string }>;
+        setupCommands: Array<{ container: { network: string }; phase: string }>;
+      };
+
+      expect(payload).toMatchObject({
+        executionMode: "container",
+        status: "success"
+      });
+      expect(payload.summaries[0]).toMatchObject({
+        setupCommands: ["node setup.js"],
+        testsPassed: true,
+        testsRun: true
+      });
+      expect(summary.setupCommands).toHaveLength(1);
+      expect(summary.commands).toHaveLength(1);
+      expect(summary.setupCommands[0]).toMatchObject({
+        container: { network: "default" },
+        phase: "setup"
+      });
+      expect(summary.commands[0]).toMatchObject({
+        container: { network: "none" },
+        phase: "test"
+      });
+      await expect(
+        readFile(path.join(session.paths.testsDir, "mock-codex", "setup-command-1.stdout.log"), "utf8")
+      ).resolves.toContain("fake docker run");
+    } finally {
+      if (previousDockerCommand === undefined) {
+        delete process.env.CODECOUNCIL_DOCKER_COMMAND;
+      } else {
+        process.env.CODECOUNCIL_DOCKER_COMMAND = previousDockerCommand;
+      }
+    }
+  });
+
+  it("kills and removes a named Docker container after a timeout", async () => {
+    const fakeDocker = await createFakeDocker({
+      hangRun: true
+    });
+    const result = await runContainerizedTestCommand({
+      commandLine: "node slow-test.mjs",
+      containerName: "codecouncil-test-timeout",
+      cwd: await makeTempDir("codecouncil-container-timeout-"),
+      dockerCommand: fakeDocker.commandPath,
+      image: "node:fake",
+      network: "none",
+      timeoutMs: 500
+    });
+    const log = await readFile(fakeDocker.logPath, "utf8");
+
+    expect(result).toMatchObject({
+      executionMode: "container",
+      timedOut: true
+    });
+    expect(log).toContain("run");
+    expect(log).toContain("kill codecouncil-test-timeout");
+    expect(log).toContain("rm -f codecouncil-test-timeout");
   });
 });
 
@@ -401,6 +521,49 @@ async function runCli(argv: readonly string[]): Promise<string> {
   }
 
   return chunks.join("");
+}
+
+async function createFakeDocker(options: { hangRun?: boolean } = {}): Promise<{
+  commandPath: string;
+  logPath: string;
+}> {
+  const directory = await makeTempDir("codecouncil-fake-docker-");
+  const commandPath = path.join(directory, "docker");
+  const logPath = path.join(directory, "docker.log");
+  const source = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(logPath)}, args.join(" ") + "\\n");
+if (args[0] === "version") {
+  process.stdout.write("fake-docker\\n");
+  process.exit(0);
+}
+if (args[0] === "image" && args[1] === "inspect") {
+  process.exit(0);
+}
+if (args[0] === "kill" || args[0] === "rm") {
+  process.exit(0);
+}
+if (args[0] === "run") {
+  process.stdout.write("fake docker run\\n");
+  if (${options.hangRun === true ? "true" : "false"}) {
+    setInterval(() => {}, 1000);
+    return;
+  } else {
+    process.exit(0);
+  }
+}
+process.exit(0);
+`;
+
+  await writeFile(commandPath, source, "utf8");
+  await writeFile(logPath, "", "utf8");
+  await chmod(commandPath, 0o755);
+
+  return {
+    commandPath,
+    logPath
+  };
 }
 
 async function makeTempDir(prefix: string): Promise<string> {

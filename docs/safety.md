@@ -68,8 +68,17 @@ codecouncil test --session <id> --agents codex,claude --container
 Containerized test execution mounts the selected agent worktree at `/workspace`,
 disables Docker networking, and saves the same test logs/artifacts as host mode.
 It uses a locally available Docker image from `testContainer.image`; CodeCouncil
-does not pull images or install dependencies automatically. Containers reduce
-host exposure, but they are still defense-in-depth rather than a perfect sandbox.
+does not pull images or install dependencies automatically. Host-installed
+dependencies may fail in a Linux container when they include native binaries; use
+a prebuilt image or explicit `--container-setup` commands when needed. Setup
+commands run before tests in a separate container with Docker's default network;
+the actual test commands then run in fresh containers with networking disabled.
+Containers reduce host exposure, but they are still defense-in-depth rather than
+a perfect sandbox.
+
+Container mode mounts only the agent worktree. Git worktrees usually contain a
+`.git` file pointing to a git directory outside that mount, so tests that invoke
+`git` may fail unless the image or test setup accounts for it.
 
 Saved artifacts are scanned for suspicious command text such as:
 

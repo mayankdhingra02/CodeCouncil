@@ -115,6 +115,22 @@ networking disabled. The Docker image comes from `testContainer.image` and must
 already be present locally; CodeCouncil does not pull images or install
 dependencies automatically.
 
+If dependencies need to be installed inside the container, opt in explicitly:
+
+```bash
+codecouncil test --session <id> --agents codex,claude --container --container-setup
+```
+
+Setup commands from `testContainer.setupCommands` run first in a separate
+container with Docker's default network. The actual test commands then run in
+fresh named containers with `--network none`, `--init`, and a best-effort
+host-user mapping. If a containerized command times out, CodeCouncil kills and
+removes that named container.
+
+Limitation: git worktrees usually contain a `.git` file pointing to a git
+directory outside the worktree. Because container mode mounts only the worktree,
+tests that invoke `git` may fail unless the image/test setup accounts for that.
+
 ## Final Report
 
 The final report recommends what to inspect next. It includes:

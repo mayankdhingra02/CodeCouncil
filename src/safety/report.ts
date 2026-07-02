@@ -157,12 +157,15 @@ async function loadTestExecutionModes(session: TaskSession): Promise<string[]> {
         commands?: Array<{
           executionMode?: unknown;
         }>;
+        setupCommands?: Array<{
+          executionMode?: unknown;
+        }>;
       }>;
     };
 
     return unique(
       (parsed.summaries ?? [])
-        .flatMap((summary) => summary.commands ?? [])
+        .flatMap((summary) => [...(summary.setupCommands ?? []), ...(summary.commands ?? [])])
         .map((command) => command.executionMode)
         .filter((mode): mode is string => typeof mode === "string")
     );

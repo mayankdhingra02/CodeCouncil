@@ -7,12 +7,16 @@ import { parseCommandLine } from "./commandLine.js";
 
 export type TestCommandStatus = "passed" | "failed" | "error";
 export type TestExecutionMode = "host" | "container";
+export type TestCommandPhase = "setup" | "test";
+export type TestContainerNetworkMode = "default" | "none";
 
 export interface TestCommandContainerMetadata {
+  containerName: string;
   dockerCommand: string;
   image: string;
   mountPath: string;
-  network: "none";
+  network: TestContainerNetworkMode;
+  user?: string;
   workdir: string;
 }
 
@@ -27,6 +31,7 @@ export interface TestCommandRun {
   error?: string;
   executionMode: TestExecutionMode;
   exitCode?: number;
+  phase: TestCommandPhase;
   startedAt: string;
   status: TestCommandStatus;
   stderr: string;
@@ -41,8 +46,11 @@ export interface RunTestCommandOptions {
 }
 
 export interface RunContainerizedTestCommandOptions extends RunTestCommandOptions {
+  containerName: string;
   dockerCommand?: string;
   image: string;
+  network: TestContainerNetworkMode;
+  phase?: TestCommandPhase;
 }
 
 const CONTAINER_WORKDIR = "/workspace";
@@ -64,6 +72,7 @@ export async function runTestCommand(options: RunTestCommandOptions): Promise<Te
       durationMs: 0,
       error: `Refused risky test command: ${riskyCommands.map((finding) => finding.reason).join(", ")}`,
       executionMode: "host",
+      phase: "test",
       startedAt,
       status: "error",
       stderr: "",
@@ -85,6 +94,7 @@ export async function runTestCommand(options: RunTestCommandOptions): Promise<Te
     });
     const completed = Date.now();
     const exitCode = result.exitCode ?? 1;
+    const timedOut = result.timedOut === true;
 
     return {
       args: parsed.args,
@@ -93,13 +103,15 @@ export async function runTestCommand(options: RunTestCommandOptions): Promise<Te
       completedAt: new Date(completed).toISOString(),
       cwd: options.cwd,
       durationMs: completed - started,
+      ...(timedOut ? { error: "Test command timed out." } : {}),
       executionMode: "host",
       exitCode,
+      phase: "test",
       startedAt,
-      status: exitCode === 0 ? "passed" : "failed",
+      status: timedOut ? "error" : exitCode === 0 ? "passed" : "failed",
       stderr: redactSecrets(result.stderr),
       stdout: redactSecrets(result.stdout),
-      timedOut: false
+      timedOut
     };
   } catch (error) {
     const completed = Date.now();
@@ -121,6 +133,7 @@ export async function runTestCommand(options: RunTestCommandOptions): Promise<Te
       durationMs: completed - started,
       error: redactSecrets(maybeError.shortMessage ?? "Test command failed."),
       executionMode: "host",
+      phase: "test",
       startedAt,
       status: "error",
       stderr: redactSecrets(maybeError.stderr ?? ""),
@@ -141,6 +154,7 @@ export async function runContainerizedTestCommand(
   options: RunContainerizedTestCommandOptions
 ): Promise<TestCommandRun> {
   const dockerCommand = options.dockerCommand ?? getDockerCommand();
+  const phase = options.phase ?? "test";
   const riskyCommands = classifyDangerousCommand(options.commandLine).filter(
     (finding) => finding.severity === "high" || finding.severity === "critical"
   );
@@ -153,14 +167,17 @@ export async function runContainerizedTestCommand(
       commandLine: options.commandLine,
       completedAt: startedAt,
       container: buildContainerMetadata({
+        containerName: options.containerName,
         dockerCommand,
         image: options.image,
-        mountPath: options.cwd
+        mountPath: options.cwd,
+        network: options.network
       }),
       cwd: options.cwd,
       durationMs: 0,
       error: `Refused risky test command: ${riskyCommands.map((finding) => finding.reason).join(", ")}`,
       executionMode: "container",
+      phase,
       startedAt,
       status: "error",
       stderr: "",
@@ -170,18 +187,24 @@ export async function runContainerizedTestCommand(
   }
 
   const parsed = parseCommandLine(options.commandLine);
+  const dockerUser = getDockerUser();
   const dockerArgs = buildDockerRunArgs({
     commandArgs: parsed.args,
     command: parsed.command,
+    containerName: options.containerName,
     image: options.image,
-    mountPath: options.cwd
+    mountPath: options.cwd,
+    network: options.network,
+    ...(dockerUser ? { user: dockerUser } : {})
   });
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
   const container = buildContainerMetadata({
+    containerName: options.containerName,
     dockerCommand,
     image: options.image,
-    mountPath: options.cwd
+    mountPath: options.cwd,
+    network: options.network
   });
 
   try {
@@ -193,6 +216,11 @@ export async function runContainerizedTestCommand(
     });
     const completed = Date.now();
     const exitCode = result.exitCode ?? 1;
+    const timedOut = result.timedOut === true;
+
+    if (timedOut) {
+      await killContainer(dockerCommand, options.containerName);
+    }
 
     return {
       args: dockerArgs,
@@ -202,13 +230,15 @@ export async function runContainerizedTestCommand(
       container,
       cwd: options.cwd,
       durationMs: completed - started,
+      ...(timedOut ? { error: "Containerized test command timed out." } : {}),
       executionMode: "container",
       exitCode,
+      phase,
       startedAt,
-      status: exitCode === 0 ? "passed" : "failed",
+      status: timedOut ? "error" : exitCode === 0 ? "passed" : "failed",
       stderr: redactSecrets(result.stderr),
       stdout: redactSecrets(result.stdout),
-      timedOut: false
+      timedOut
     };
   } catch (error) {
     const completed = Date.now();
@@ -221,6 +251,11 @@ export async function runContainerizedTestCommand(
       timedOut?: boolean;
     };
     const timedOut = maybeError.timedOut === true || maybeError.isTerminated === true;
+
+    if (timedOut) {
+      await killContainer(dockerCommand, options.containerName);
+    }
+
     const run: TestCommandRun = {
       args: dockerArgs,
       command: dockerCommand,
@@ -231,6 +266,7 @@ export async function runContainerizedTestCommand(
       durationMs: completed - started,
       error: redactSecrets(maybeError.shortMessage ?? "Containerized test command failed."),
       executionMode: "container",
+      phase,
       startedAt,
       status: "error",
       stderr: redactSecrets(maybeError.stderr ?? ""),
@@ -300,42 +336,94 @@ export async function assertDockerTestRuntimeAvailable(options: {
 export function buildDockerRunArgs(options: {
   command: string;
   commandArgs: readonly string[];
+  containerName: string;
   image: string;
   mountPath: string;
+  network: TestContainerNetworkMode;
+  user?: string;
 }): string[] {
-  return [
+  const args = [
     "run",
     "--rm",
     "--pull",
     "never",
-    "--network",
-    "none",
+    "--init",
+    "--name",
+    options.containerName
+  ];
+
+  if (options.network === "none") {
+    args.push("--network", "none");
+  }
+
+  if (options.user) {
+    args.push("--user", options.user);
+  }
+
+  args.push(
     "--workdir",
     CONTAINER_WORKDIR,
     "--volume",
     `${options.mountPath}:${CONTAINER_WORKDIR}`,
     "--env",
     "CI=1",
+    "--env",
+    "HOME=/tmp",
     options.image,
     options.command,
     ...options.commandArgs
-  ];
+  );
+
+  return args;
 }
 
 function buildContainerMetadata(options: {
+  containerName: string;
   dockerCommand: string;
   image: string;
   mountPath: string;
+  network: TestContainerNetworkMode;
 }): TestCommandContainerMetadata {
+  const user = getDockerUser();
   return {
+    containerName: options.containerName,
     dockerCommand: options.dockerCommand,
     image: options.image,
     mountPath: options.mountPath,
-    network: "none",
-    workdir: CONTAINER_WORKDIR
+    network: options.network,
+    workdir: CONTAINER_WORKDIR,
+    ...(user ? { user } : {})
   };
 }
 
 function getDockerCommand(): string {
   return process.env.CODECOUNCIL_DOCKER_COMMAND?.trim() || DEFAULT_DOCKER_COMMAND;
+}
+
+function getDockerUser(): string | undefined {
+  if (process.platform === "win32") {
+    return undefined;
+  }
+
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const gid = typeof process.getgid === "function" ? process.getgid() : undefined;
+
+  if (uid === undefined || gid === undefined) {
+    return undefined;
+  }
+
+  return `${uid}:${gid}`;
+}
+
+async function killContainer(dockerCommand: string, containerName: string): Promise<void> {
+  await execa(dockerCommand, ["kill", containerName], {
+    reject: false,
+    shell: false,
+    timeout: 10_000
+  });
+  await execa(dockerCommand, ["rm", "-f", containerName], {
+    reject: false,
+    shell: false,
+    timeout: 10_000
+  });
 }

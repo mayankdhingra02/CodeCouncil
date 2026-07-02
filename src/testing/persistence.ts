@@ -17,6 +17,7 @@ export interface AgentTestSummary {
   commands: PersistedTestCommandRun[];
   completedAt: string;
   durationMs: number;
+  setupCommands: PersistedTestCommandRun[];
   status: "passed" | "failed" | "skipped";
   summaryJsonPath: string;
   testsPassed: boolean;
@@ -37,18 +38,59 @@ export async function saveAgentTestSummary(options: {
   agentId: AgentId;
   runs: readonly TestCommandRun[];
   session: TaskSession;
+  setupRuns?: readonly TestCommandRun[];
   worktreePath: string;
 }): Promise<AgentTestSummary> {
   const testsDir = path.join(options.session.paths.testsDir, options.agentId);
   await mkdir(testsDir, { recursive: true });
 
-  const commands: PersistedTestCommandRun[] = [];
+  const setupCommands = await persistRuns({
+    basename: "setup-command",
+    runs: options.setupRuns ?? [],
+    testsDir
+  });
+  const commands = await persistRuns({
+    basename: "command",
+    runs: options.runs,
+    testsDir
+  });
+
+  const summaryJsonPath = path.join(testsDir, "summary.json");
+  const allRuns = [...setupCommands, ...commands];
+  const setupPassed = setupCommands.every((run) => run.status === "passed");
+  const testCommandsPassed = commands.length > 0 && commands.every((run) => run.status === "passed");
+  const durationMs = allRuns.reduce((total, run) => total + run.durationMs, 0);
+  const testsPassed = setupPassed && testCommandsPassed;
+  const status = allRuns.length === 0 ? "skipped" : testsPassed ? "passed" : "failed";
+  const completedAt = new Date().toISOString();
+  const summary: AgentTestSummary = {
+    agentId: options.agentId,
+    commands,
+    completedAt,
+    durationMs,
+    setupCommands,
+    status,
+    summaryJsonPath,
+    testsPassed,
+    worktreePath: options.worktreePath
+  };
+
+  await writeFile(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  return summary;
+}
+
+async function persistRuns(options: {
+  basename: string;
+  runs: readonly TestCommandRun[];
+  testsDir: string;
+}): Promise<PersistedTestCommandRun[]> {
+  const persistedRuns: PersistedTestCommandRun[] = [];
 
   for (const [index, run] of options.runs.entries()) {
     const commandIndex = index + 1;
-    const stdoutPath = path.join(testsDir, `command-${commandIndex}.stdout.log`);
-    const stderrPath = path.join(testsDir, `command-${commandIndex}.stderr.log`);
-    const resultPath = path.join(testsDir, `command-${commandIndex}.json`);
+    const stdoutPath = path.join(options.testsDir, `${options.basename}-${commandIndex}.stdout.log`);
+    const stderrPath = path.join(options.testsDir, `${options.basename}-${commandIndex}.stderr.log`);
+    const resultPath = path.join(options.testsDir, `${options.basename}-${commandIndex}.json`);
     const { stdout, stderr, ...summary } = run;
     const persisted = {
       ...summary,
@@ -60,27 +102,10 @@ export async function saveAgentTestSummary(options: {
     await writeFile(stdoutPath, stdout, "utf8");
     await writeFile(stderrPath, stderr, "utf8");
     await writeFile(resultPath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
-    commands.push(persisted);
+    persistedRuns.push(persisted);
   }
 
-  const summaryJsonPath = path.join(testsDir, "summary.json");
-  const durationMs = commands.reduce((total, run) => total + run.durationMs, 0);
-  const testsPassed = commands.length > 0 && commands.every((run) => run.status === "passed");
-  const status = commands.length === 0 ? "skipped" : testsPassed ? "passed" : "failed";
-  const completedAt = new Date().toISOString();
-  const summary: AgentTestSummary = {
-    agentId: options.agentId,
-    commands,
-    completedAt,
-    durationMs,
-    status,
-    summaryJsonPath,
-    testsPassed,
-    worktreePath: options.worktreePath
-  };
-
-  await writeFile(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  return summary;
+  return persistedRuns;
 }
 
 export async function saveTestSessionSummary(options: {
@@ -121,18 +146,38 @@ export function renderTestSummaryMarkdown(summary: TestSessionSummary): string {
     `Status: ${summary.status}`,
     `Command source: ${summary.commandSelection.source}`,
     "",
-    "| Agent | Status | Mode | Commands | Duration |",
-    "| --- | --- | --- | --- | --- |"
+    "| Agent | Status | Mode | Setup | Commands | Duration |",
+    "| --- | --- | --- | ---: | ---: | --- |"
   ];
 
   for (const agentSummary of summary.summaries) {
-    const modes = unique(agentSummary.commands.map((command) => command.executionMode));
+    const modes = unique(
+      [...agentSummary.setupCommands, ...agentSummary.commands].map((command) => command.executionMode)
+    );
     lines.push(
-      `| ${agentSummary.agentId} | ${agentSummary.status} | ${modes.join(", ") || "n/a"} | ${agentSummary.commands.length} | ${formatDuration(agentSummary.durationMs)} |`
+      `| ${agentSummary.agentId} | ${agentSummary.status} | ${modes.join(", ") || "n/a"} | ${agentSummary.setupCommands.length} | ${agentSummary.commands.length} | ${formatDuration(agentSummary.durationMs)} |`
     );
   }
 
-  lines.push("", "## Commands", "");
+  lines.push("", "## Setup Commands", "");
+
+  for (const agentSummary of summary.summaries) {
+    lines.push(`### ${agentSummary.agentId}`, "");
+
+    for (const command of agentSummary.setupCommands) {
+      lines.push(
+        `- \`${command.commandLine}\`: ${command.status} (${command.executionMode}, ${formatDuration(command.durationMs)}, exit ${command.exitCode ?? "n/a"})`
+      );
+    }
+
+    if (agentSummary.setupCommands.length === 0) {
+      lines.push("- No setup commands were run.");
+    }
+
+    lines.push("");
+  }
+
+  lines.push("## Test Commands", "");
 
   for (const agentSummary of summary.summaries) {
     lines.push(`### ${agentSummary.agentId}`, "");

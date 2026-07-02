@@ -48,6 +48,7 @@ Fallback legacy name:
   "testCommands": ["npm test"],
   "testContainer": {
     "image": "node:20-bookworm-slim",
+    "setupCommands": [],
     "timeoutSeconds": 600
   },
   "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil"],
@@ -215,6 +216,7 @@ Config:
 {
   "testContainer": {
     "image": "node:20-bookworm-slim",
+    "setupCommands": ["npm ci"],
     "timeoutSeconds": 600
   }
 }
@@ -228,6 +230,32 @@ When `--container` is set, CodeCouncil:
 - mounts only the selected agent worktree at `/workspace`
 - runs with Docker network disabled
 - saves stdout, stderr, exit code, duration, and command JSON under the usual `tests/<agent>/` directory
+
+Dependency setup is explicit. If the worktree already contains host-installed
+dependencies, they may not work in a Linux container, especially for packages
+with native binaries. Prefer a prebuilt image containing dependencies, or opt in
+to setup commands:
+
+```bash
+codecouncil test --session <id> --agents codex,claude --container --container-setup
+```
+
+Setup commands from `testContainer.setupCommands` run first with Docker's default
+network. Test commands then run in a fresh container with networking disabled.
+You can also pass one-off setup commands:
+
+```bash
+codecouncil test --session <id> --agents codex --container --container-setup-command "npm ci"
+```
+
+Containerized commands use named containers and `--init`. CodeCouncil maps the
+host UID/GID into the container when Node exposes that information, which helps
+avoid root-owned files on Linux hosts. If a containerized command times out,
+CodeCouncil attempts to `docker kill` and `docker rm -f` that named container.
+
+Container mode mounts only the agent worktree. In git worktrees, `.git` is often
+a file pointing at a git directory outside the mounted path, so tests that invoke
+`git` may fail inside the container.
 
 Use `--container-image <image>` to override the configured image for one run.
 Use `--timeout-seconds <seconds>` to override the configured container timeout.

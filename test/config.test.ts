@@ -89,6 +89,7 @@ describe("loadConfig", () => {
       testCommands: ["pnpm test"],
       testContainer: {
         image: "node:20-bookworm-slim",
+        setupCommands: [],
         timeoutSeconds: 600
       },
       ignore: [".env"],
@@ -109,6 +110,7 @@ describe("loadConfig", () => {
         projectName: "container-tests",
         testContainer: {
           image: "node:22-bookworm-slim",
+          setupCommands: ["npm ci"],
           timeoutSeconds: 120
         }
       }),
@@ -119,6 +121,7 @@ describe("loadConfig", () => {
 
     expect(loaded.config.testContainer).toEqual({
       image: "node:22-bookworm-slim",
+      setupCommands: ["npm ci"],
       timeoutSeconds: 120
     });
   });

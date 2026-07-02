@@ -91,6 +91,13 @@ Optional safer variant when the configured Docker image is available locally:
 codecouncil test --session <session-id> --agents mock-codex,mock-claude --container
 ```
 
+If the container needs dependencies installed first and you configured
+`testContainer.setupCommands`, use:
+
+```bash
+codecouncil test --session <session-id> --agents mock-codex,mock-claude --container --container-setup
+```
+
 Open:
 
 ```text

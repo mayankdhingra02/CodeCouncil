@@ -35,6 +35,8 @@ interface TestOptions {
   command?: string[];
   container?: boolean;
   containerImage?: string;
+  containerSetup?: boolean;
+  containerSetupCommand?: string[];
   session?: string;
   timeoutSeconds?: string;
 }
@@ -47,6 +49,7 @@ interface AgentTestCliSummary {
   diffSizeBytes: number;
   durationMs: number;
   preliminaryScore: number;
+  setupCommands: string[];
   summaryJsonPath: string;
   testsPassed: boolean;
   testsRun: boolean;
@@ -74,6 +77,8 @@ export function registerTestCommand(program: Command): void {
     .option("--command <command>", "test command to run; repeat for multiple commands", collectRepeatableOption)
     .option("--container", "run tests inside Docker with the agent worktree mounted as /workspace")
     .option("--container-image <image>", "Docker image to use with --container; overrides testContainer.image")
+    .option("--container-setup", "run configured testContainer.setupCommands before tests with Docker networking enabled")
+    .option("--container-setup-command <command>", "container setup command to run before tests; repeat for multiple commands", collectRepeatableOption)
     .option("--session <id>", "session id containing implementation worktrees")
     .option("--timeout-seconds <seconds>", "timeout per test command")
     .action(async (options: TestOptions, command: Command) => {
@@ -88,6 +93,30 @@ export function registerTestCommand(program: Command): void {
 
       const executionMode = options.container === true ? "container" : "host";
       const containerImage = options.containerImage ?? runtime.loadedConfig.config.testContainer.image;
+      const explicitSetupCommands = options.containerSetupCommand ?? [];
+      const setupCommands =
+        explicitSetupCommands.length > 0
+          ? explicitSetupCommands
+          : runtime.loadedConfig.config.testContainer.setupCommands;
+      const runContainerSetup = options.containerSetup === true || explicitSetupCommands.length > 0;
+
+      if (executionMode === "host" && runContainerSetup) {
+        throw new CodeCouncilError("Container setup commands require --container.", {
+          code: "CONTAINER_SETUP_REQUIRES_CONTAINER",
+          exitCode: 2
+        });
+      }
+
+      if (executionMode === "container" && runContainerSetup && setupCommands.length === 0) {
+        throw new CodeCouncilError(
+          "No container setup commands are configured. Add testContainer.setupCommands or pass --container-setup-command.",
+          {
+            code: "MISSING_CONTAINER_SETUP_COMMAND",
+            exitCode: 2
+          }
+        );
+      }
+
       const timeoutSeconds = parseTimeoutSeconds(
         options.timeoutSeconds,
         executionMode === "container"
@@ -129,7 +158,12 @@ export function registerTestCommand(program: Command): void {
           commandSource: commandSelection.source,
           commands: commandSelection.commands,
           executionMode,
-          ...(executionMode === "container" ? { containerImage } : {})
+          ...(executionMode === "container"
+            ? {
+                containerImage,
+                containerSetupCommands: runContainerSetup ? setupCommands : []
+              }
+            : {})
         }
       });
 
@@ -143,6 +177,7 @@ export function registerTestCommand(program: Command): void {
           containerImage,
           commandSelection,
           executionMode,
+          setupCommands: runContainerSetup ? setupCommands : [],
           session,
           timeoutSeconds,
           worktreePath: worktree.worktreePath
@@ -170,6 +205,7 @@ export function registerTestCommand(program: Command): void {
           diffSizeBytes,
           durationMs: agentSummary.durationMs,
           preliminaryScore: score.score,
+          setupCommands: runContainerSetup ? setupCommands : [],
           summaryJsonPath: agentSummary.summaryJsonPath,
           testsPassed: agentSummary.testsPassed,
           testsRun: agentSummary.commands.length > 0,
@@ -245,6 +281,7 @@ async function runTestsForAgent(options: {
   containerImage: string;
   commandSelection: TestCommandSelection;
   executionMode: "container" | "host";
+  setupCommands: readonly string[];
   session: TaskSession;
   timeoutSeconds: number;
   worktreePath: string;
@@ -257,34 +294,64 @@ async function runTestsForAgent(options: {
     metadata: {
       commands: options.commandSelection.commands,
       executionMode: options.executionMode,
-      ...(options.executionMode === "container" ? { containerImage: options.containerImage } : {}),
+      ...(options.executionMode === "container"
+        ? {
+            containerImage: options.containerImage,
+            setupCommands: options.setupCommands
+          }
+        : {}),
       worktreePath: options.worktreePath
     }
   });
 
-  const runs = [];
+  const setupRuns = [];
 
-  for (const commandLine of options.commandSelection.commands) {
-    runs.push(
-      options.executionMode === "container"
-        ? await runContainerizedTestCommand({
-            commandLine,
-            cwd: options.worktreePath,
-            image: options.containerImage,
-            timeoutMs: options.timeoutSeconds * 1000
-          })
-        : await runTestCommand({
-            commandLine,
-            cwd: options.worktreePath,
-            timeoutMs: options.timeoutSeconds * 1000
-          })
-    );
+  if (options.executionMode === "container") {
+    for (const [index, commandLine] of options.setupCommands.entries()) {
+      setupRuns.push(
+        await runContainerizedTestCommand({
+          commandLine,
+          containerName: buildContainerName(options.session.id, options.agentId, "setup", index + 1),
+          cwd: options.worktreePath,
+          image: options.containerImage,
+          network: "default",
+          phase: "setup",
+          timeoutMs: options.timeoutSeconds * 1000
+        })
+      );
+    }
+  }
+
+  const runs = [];
+  const setupPassed = setupRuns.every((run) => run.status === "passed");
+
+  if (setupPassed) {
+    for (const [index, commandLine] of options.commandSelection.commands.entries()) {
+      runs.push(
+        options.executionMode === "container"
+          ? await runContainerizedTestCommand({
+              commandLine,
+              containerName: buildContainerName(options.session.id, options.agentId, "test", index + 1),
+              cwd: options.worktreePath,
+              image: options.containerImage,
+              network: "none",
+              phase: "test",
+              timeoutMs: options.timeoutSeconds * 1000
+            })
+          : await runTestCommand({
+              commandLine,
+              cwd: options.worktreePath,
+              timeoutMs: options.timeoutSeconds * 1000
+            })
+      );
+    }
   }
 
   const summary = await saveAgentTestSummary({
     agentId: options.agentId,
     runs,
     session: options.session,
+    setupRuns,
     worktreePath: options.worktreePath
   });
 
@@ -297,10 +364,13 @@ async function runTestsForAgent(options: {
         ? `Tests passed for ${options.agentId}.`
         : summary.status === "skipped"
           ? `No tests were available for ${options.agentId}.`
+          : !setupPassed
+            ? `Container setup failed for ${options.agentId}.`
           : `Tests failed for ${options.agentId}.`,
     metadata: {
       durationMs: summary.durationMs,
       executionMode: options.executionMode,
+      setupCommands: options.setupCommands,
       summaryJsonPath: summary.summaryJsonPath
     }
   });
@@ -437,11 +507,12 @@ function asStringArray(value: unknown): string[] {
 
 function renderCliTable(summaries: readonly AgentTestCliSummary[]): string[] {
   const rows = [
-    ["agent", "mode", "tests", "command", "duration", "changed", "diff", "score"],
+    ["agent", "mode", "tests", "setup", "command", "duration", "changed", "diff", "score"],
     ...summaries.map((summary) => [
       summary.agentId,
       summary.executionMode,
       summary.testsRun ? (summary.testsPassed ? "passed" : "failed") : "skipped",
+      String(summary.setupCommands.length),
       summary.commands.join("; ") || "(none)",
       formatDuration(summary.durationMs),
       String(summary.changedFiles.length),
@@ -464,6 +535,23 @@ function renderCliTable(summaries: readonly AgentTestCliSummary[]): string[] {
 
     return line;
   });
+}
+
+function buildContainerName(
+  sessionId: string,
+  agentId: AgentId,
+  phase: "setup" | "test",
+  index: number
+): string {
+  const raw = `codecouncil-test-${sessionId}-${agentId}-${phase}-${index}-${process.pid}`;
+  const sanitized = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "-")
+    .replace(/^[^a-z0-9]+/g, "")
+    .slice(0, 120)
+    .replace(/[^a-z0-9]+$/g, "");
+
+  return sanitized || `codecouncil-test-${process.pid}`;
 }
 
 function formatDuration(durationMs: number): string {

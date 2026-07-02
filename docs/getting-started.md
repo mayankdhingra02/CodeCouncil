@@ -76,7 +76,9 @@ For higher-risk repositories, run tests inside Docker instead of on the host:
 codecouncil test --session <session-id> --agents mock-codex,mock-claude --container
 ```
 
-The configured Docker image must already exist locally.
+The configured Docker image must already exist locally. If dependencies need to
+be installed inside the container, configure `testContainer.setupCommands` and
+add `--container-setup`.
 
 Preview apply instructions:
 

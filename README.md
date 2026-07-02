@@ -213,7 +213,7 @@ CodeCouncil is designed for defense-in-depth, not perfect sandboxing.
 - An approved plan is required before implementation unless explicitly bypassed.
 - Sensitive paths such as `.env`, private keys, credentials, `.git`, `node_modules`, and CodeCouncil internals are blocked or warned on.
 - Test commands are configured/detected and run without shell interpolation.
-- Optional `codecouncil test --container` runs tests in Docker with the agent worktree mounted at `/workspace` and Docker networking disabled.
+- Optional `codecouncil test --container` runs tests in Docker with the agent worktree mounted at `/workspace` and Docker networking disabled; dependency setup requires a prebuilt image or explicit `--container-setup`.
 - Dangerous command text is flagged in artifacts and reports.
 - Prompt guardrails warn agents about repository prompt injection.
 - Logs are redacted for common secret patterns.

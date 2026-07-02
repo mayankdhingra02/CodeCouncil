@@ -25,6 +25,7 @@
   "testCommands": ["pnpm test"],
   "testContainer": {
     "image": "node:20-bookworm-slim",
+    "setupCommands": [],
     "timeoutSeconds": 600
   },
   "ignore": [".env", ".env.*", "node_modules", ".git", ".codecouncil", "dist", "coverage"],

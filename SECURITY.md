@@ -86,9 +86,17 @@ Test stdout and stderr are saved locally under the session `tests/` directory. L
 
 `codecouncil test --container` optionally runs tests in Docker. It verifies the
 configured image exists locally, does not pull images automatically, mounts only
-the selected agent worktree at `/workspace`, disables Docker networking, and
-persists the same stdout/stderr/result artifacts as host-mode tests. This reduces
-host exposure, but it is still defense-in-depth rather than a complete sandbox.
+the selected agent worktree at `/workspace`, disables Docker networking for test
+commands, and persists the same stdout/stderr/result artifacts as host-mode
+tests. Dependency setup requires a prebuilt image or explicit
+`--container-setup`; setup commands run before tests with Docker's default
+network. Host-installed native dependencies may not work inside a Linux
+container. Timed-out container commands are run with deterministic names so
+CodeCouncil can kill and remove them. This reduces host exposure, but it is still
+defense-in-depth rather than a complete sandbox.
+
+Container mode mounts only the worktree, so git-invoking tests may fail when the
+worktree `.git` file points at a git directory outside the mount.
 
 ## Review Safety
 
